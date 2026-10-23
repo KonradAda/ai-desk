@@ -36,12 +36,12 @@ const STATES = [
   ["waiting", "Needs you: pulses"],
   ["done", "Done: snores"],
   ["idle", "Idle: snores"],
-  ["waking", "Waking up (when work starts)"],
+  ["cycle", "Waking up and falling asleep"],
 ];
 const NAMES = ["Round", "Antennas", "Ghost", "Slime"];
-// "waking" isn't a status: it's working right after sleeping, shown from the start.
-const cell = (index, status) => status === "waking"
-  ? `<div class="cell working wake" data-index="${index}">${mascotSVG(index, "working", 0)}</div>`
+// "cycle" isn't a status: it loops sleep, wake up, work, fall asleep (filled in below).
+const cell = (index, status) => status === "cycle"
+  ? `<div class="cell cycle" data-index="${index}"></div>`
   : `<div class="cell ${status}">${mascotSVG(index, status)}</div>`;
 
 let html = `<div></div>${STATES.map(([, label]) => `<div class="head">${label}</div>`).join("")}`;
@@ -51,16 +51,22 @@ NAMES.forEach((name, shape) => {
 document.getElementById("states").innerHTML = html;
 document.getElementById("colors").innerHTML = COLORS.map((_, i) => cell(i, "working")).join("");
 
-// Replay the wake-up: asleep for a moment, wake up, work for a moment, again.
+// Loop: asleep, wake up, work, fall asleep, again.
+const PHASES = [
+  ["sleep", 1000, "done", null],
+  ["wake", TRANSITION, "working", "wake"],
+  ["work", 1600, "working", null],
+  ["fall", TRANSITION, "done", "sleep"],
+];
+const LOOP = PHASES.reduce((sum, [, ms]) => sum + ms, 0);
 setInterval(() => {
-  const t = Date.now() % 5000;
-  document.querySelectorAll(".wake").forEach(el => {
-    const i = Number(el.dataset.index);
-    const want = t < 1000 ? "sleep" : t < 1000 + WAKE ? "wake" : "work";
-    if (el.dataset.phase === want) return;
-    el.dataset.phase = want;
-    el.className = `cell wake ${want === "sleep" ? "done" : "working"}`;
-    el.innerHTML = want === "sleep" ? mascotSVG(i, "done") : want === "wake" ? mascotSVG(i, "working", 0) : mascotSVG(i, "working");
+  let t = Date.now() % LOOP;
+  const [name, , status, kind] = PHASES.find(([, ms]) => (t -= ms) < 0);
+  document.querySelectorAll(".cycle").forEach(el => {
+    if (el.dataset.phase === name) return;
+    el.dataset.phase = name;
+    el.className = `cell cycle ${status}`;
+    el.innerHTML = mascotSVG(Number(el.dataset.index), status, kind && { kind, ago: 0 });
   });
 }, 50);
 </script>

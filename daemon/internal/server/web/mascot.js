@@ -31,13 +31,22 @@ const MAGIC = { H: "#534AB7", Y: "#F2C14E", B: "#8A5A2B", "*": "#7FD6FF" };
 // One snore (breath in and out) takes this long; the Zzz rise to the same rhythm.
 const SNORE = 3000;
 
-// Waking up takes this long (see the wk0-wk6 frames in mascot.css).
-const WAKE = 1800;
+// Changes between sleeping and awake play a short animation of eye frames
+// instead of jumping straight to the new state. Each lasts TRANSITION ms;
+// the frame timings are in mascot.css (wk0-wk6 waking up, fa0-fa6 falling asleep).
+const TRANSITION = 1800;
+const TRANSITIONS = {
+  // asleep, eyes half open, open, two blinks, then wide awake with a little hop
+  wake: { cls: "wk", eyes: ["closed", "half", "open", "closed", "open", "closed", "open"] },
+  // eyes droop, it fights it once, droops again, closes, one last peek, asleep
+  sleep: { cls: "fa", eyes: ["open", "half", "open", "half", "closed", "half", "closed"] },
+};
 
-// mascotSVG draws the mascot for an agent. wokeAgo, when set, is how many ms
-// ago the agent went from sleeping to working or waiting; for the first WAKE
-// ms the mascot plays its wake-up frames instead of the status animation.
-function mascotSVG(index, status, wokeAgo = null) {
+// mascotSVG draws the mascot for an agent. change, when set, says the agent
+// just went from asleep to awake (kind "wake") or back ("sleep"), ago ms ago;
+// for the first TRANSITION ms the mascot plays that change instead of its
+// status animation.
+function mascotSVG(index, status, change = null) {
   const color = COLORS[index % COLORS.length];
   const shape = SHAPES[index % SHAPES.length];
   const u = 6;
@@ -49,7 +58,7 @@ function mascotSVG(index, status, wokeAgo = null) {
   // Animations are timed by the wall clock (a negative delay), so redrawing the card doesn't restart them.
   const clock = period => -(Date.now() % period);
   const asleep = status === "done" || status === "idle";
-  const waking = wokeAgo !== null && wokeAgo < WAKE;
+  const moving = change && change.ago < TRANSITION ? TRANSITIONS[change.kind] : null;
   // The purple mascot would blend into the purple hat, so it gets a burgundy one.
   const hat = { ...MAGIC, H: color === "#7F77DD" ? "#993556" : MAGIC.H };
 
@@ -69,11 +78,10 @@ function mascotSVG(index, status, wokeAgo = null) {
   };
 
   let out;
-  if (waking) {
-    // Wake-up frames: still asleep, eyes half open, open, two blinks, then wide awake with a little hop.
-    const closed = drawBody(shape.sleep), half = drawBody(shape.awake, true), open = drawBody(shape.awake);
-    const frames = [closed, half, open, closed, open, closed, open];
-    out = frames.map((f, i) => `<g class="wk wk${i}" style="animation-delay:${-wokeAgo}ms">${f}</g>`).join("");
+  if (moving) {
+    const eyes = { closed: drawBody(shape.sleep), half: drawBody(shape.awake, true), open: drawBody(shape.awake) };
+    out = moving.eyes.map((e, i) =>
+      `<g class="tr ${moving.cls}${i}" style="animation-delay:${-change.ago}ms">${eyes[e]}</g>`).join("");
   } else if (asleep) {
     // A sleeping mascot snores: the body and hat swell and sink with each breath.
     out = `<g class="snore" style="animation-delay:${clock(SNORE)}ms">${drawBody(shape.sleep)}</g>`;
@@ -81,7 +89,7 @@ function mascotSVG(index, status, wokeAgo = null) {
     out = drawBody(shape.awake);
   }
   WAND.forEach(([x, y, ch]) => { out += cell(x, y, MAGIC[ch]); });
-  if (waking) return `<svg class="mascot waking" width="62" height="48" viewBox="0 0 78 60" shape-rendering="crispEdges" aria-hidden="true">${out}</svg>`;
+  if (moving) return `<svg class="mascot changing" width="62" height="48" viewBox="0 0 78 60" shape-rendering="crispEdges" aria-hidden="true">${out}</svg>`;
   if (status === "working") {
     const period = 700;
     out += SPARKLES.map((pts, i) =>
