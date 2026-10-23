@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ai-desk mascots</title>
+<style>
+  body { margin: 0; padding: 24px; background: #121211; color: #f1efe8; font-family: system-ui, "Segoe UI", sans-serif; }
+  h1 { font-size: 20px; font-weight: 600; margin: 0 0 4px; }
+  h2 { font-size: 15px; font-weight: 600; margin: 28px 0 12px; }
+  p { color: #a3a199; font-size: 13px; margin: 0; }
+  .table { display: grid; grid-template-columns: 90px repeat(4, 172px); gap: 10px; align-items: center; }
+  .colors { display: grid; grid-template-columns: repeat(4, 172px); gap: 10px; }
+  .head { font-size: 12px; color: #a3a199; text-align: center; }
+  .row { font-size: 14px; text-align: right; padding-right: 6px; }
+  .cell { background: #1f1f1d; border-radius: 10px; height: 150px; display: flex; align-items: center; justify-content: center; }
+  /* Twice the mascot's 78x60 canvas, so its pixels stay sharp. */
+  .cell svg.mascot { width: 156px; height: 120px; }
+</style>
+<link rel="stylesheet" href="mascot.css">
+</head>
+<body>
+<h1>Mascots</h1>
+<p>Every shape in every state, with the animation as it runs on the screen.</p>
+
+<h2>Shapes and states</h2>
+<div class="table" id="states"></div>
+
+<h2>All colors while working</h2>
+<div class="colors" id="colors"></div>
+
+<script src="mascot.js"></script>
+<script>
+const STATES = [
+  ["working", "Working: hops, wand sparkles"],
+  ["waiting", "Needs you: pulses"],
+  ["done", "Done: snores"],
+  ["idle", "Idle: snores"],
+];
+const NAMES = ["Round", "Antennas", "Ghost", "Slime"];
+const cell = (index, status) => `<div class="cell ${status}">${mascotSVG(index, status)}</div>`;
+
+let html = `<div></div>${STATES.map(([, label]) => `<div class="head">${label}</div>`).join("")}`;
+NAMES.forEach((name, shape) => {
+  html += `<div class="row">${name}</div>${STATES.map(([status]) => cell(shape, status)).join("")}`;
+});
+document.getElementById("states").innerHTML = html;
+document.getElementById("colors").innerHTML = COLORS.map((_, i) => cell(i, "working")).join("");
+</script>
+</body>
+</html>
