@@ -51,24 +51,32 @@ NAMES.forEach((name, shape) => {
 document.getElementById("states").innerHTML = html;
 document.getElementById("colors").innerHTML = COLORS.map((_, i) => cell(i, "working")).join("");
 
-// Loop: asleep, wake up, work, fall asleep, again.
+// Loop: asleep, wake up, work, fall asleep, again. Like the screen, each
+// redraw passes how long ago the last change started, so animations carry on
+// smoothly from it.
 const PHASES = [
-  ["sleep", 1000, "done", null],
+  ["sleep", 1000, "done", "sleep"],
   ["wake", TRANSITION, "working", "wake"],
-  ["work", 1600, "working", null],
+  ["work", 1600, "working", "wake"],
   ["fall", TRANSITION, "done", "sleep"],
 ];
 const LOOP = PHASES.reduce((sum, [, ms]) => sum + ms, 0);
 setInterval(() => {
-  let t = Date.now() % LOOP;
-  const [name, , status, kind] = PHASES.find(([, ms]) => (t -= ms) < 0);
+  const now = Date.now();
+  const loopStart = now - (now % LOOP);
+  let start = loopStart, phase;
+  for (const p of PHASES) { if (now < start + p[1]) { phase = p; break; } start += p[1]; }
+  const [name, , status, kind] = phase;
+  // When the current kind of change began: this phase for "wake"/"fall",
+  // the phase before it for "work"/"sleep".
+  const changeStart = name === "work" ? start - TRANSITION : name === "sleep" ? loopStart - TRANSITION : start;
   document.querySelectorAll(".cycle").forEach(el => {
     if (el.dataset.phase === name) return;
     el.dataset.phase = name;
     el.className = `cell cycle ${status}`;
-    el.innerHTML = mascotSVG(Number(el.dataset.index), status, kind && { kind, ago: 0 });
+    el.innerHTML = mascotSVG(Number(el.dataset.index), status, { kind, ago: now - changeStart });
   });
-}, 50);
+}, 20);
 </script>
 </body>
 </html>

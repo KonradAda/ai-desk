@@ -48,9 +48,9 @@ const TRANSITIONS = {
 };
 
 // mascotSVG draws the mascot for an agent. change, when set, says the agent
-// just went from asleep to awake (kind "wake") or back ("sleep"), ago ms ago;
-// for the first TRANSITION ms the mascot plays that change instead of its
-// status animation.
+// went from asleep to awake (kind "wake") or back ("sleep") ago ms ago; for
+// the first TRANSITION ms the mascot plays that change instead of its status
+// animation.
 function mascotSVG(index, status, change = null) {
   const color = COLORS[index % COLORS.length];
   const shape = SHAPES[index % SHAPES.length];
@@ -60,8 +60,12 @@ function mascotSVG(index, status, change = null) {
   // the hat sits one row lower and covers it.
   const hatTop = shape.awake[0].replace(/\./g, "").length < 4 ? 1 : 0;
   const bodyTop = 4;
-  // Animations are timed by the wall clock (a negative delay), so redrawing the card doesn't restart them.
-  const clock = period => -(Date.now() % period);
+  // Animations are timed by a clock (a negative delay), so redrawing the card
+  // doesn't restart them. After a change the clock starts when the change
+  // ends, so the hop, breathing and Zzz begin at the start of their cycle,
+  // right where the change left the mascot; otherwise it's the wall clock.
+  const since = change ? Math.max(0, change.ago - TRANSITION) : Date.now();
+  const clock = period => -(since % period);
   const asleep = status === "done" || status === "idle";
   const moving = change && change.ago < TRANSITION ? TRANSITIONS[change.kind] : null;
   // The purple mascot would blend into the purple hat, so it gets a burgundy one.
