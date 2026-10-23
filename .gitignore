@@ -1,0 +1,13 @@
+# Go build output
+daemon/aidesk
+daemon/aidesk.exe
+*.test
+
+# PlatformIO
+firmware/.pio/
+
+# Editors / OS
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store
