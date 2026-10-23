@@ -274,7 +274,8 @@ function stepText(s) {
 }
 
 // progress turns the agent's plan into a bar that matches the step shown on the
-// card: "Step 2/4" starts at 50%, "Step 3/4" at 75%. The last step starts short
+// card: "Step 2/4" starts at 50%, "Step 3/4" at 75%. The first step starts low
+// (10%) so a fresh plan doesn't look a quarter done. The last step starts short
 // of the end (up to 15% before it), and 100% only comes when the agent stops.
 // Within a step the bar eases toward the next step's mark the longer the step
 // runs, but never reaches it before the step is completed.
@@ -284,7 +285,7 @@ function progress(s, now) {
   const { done, total } = s.steps;
   const step = Math.min(done + 1, total); // the step number shown on the card
   const lastMark = 100 - Math.min(15, 60 / total);
-  const mark = n => (n >= total ? lastMark : (n / total) * 100);
+  const mark = n => (n >= total ? lastMark : n === 1 ? 10 : (n / total) * 100);
   const from = mark(step);
   const to = step >= total ? 99 : mark(step + 1);
   const secs = Math.max(0, (now - new Date(s.steps.since)) / 1000);
