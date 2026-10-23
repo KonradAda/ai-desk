@@ -291,6 +291,7 @@ let latest = { sessions: [], now: new Date().toISOString(), settings: { cards_pe
 let offset = 0; // server clock minus local clock
 let page = 0;
 let lastStatus = {}; // session id -> status in the previous update, to spot new waits
+let wokeAt = {}; // session id -> when it went from sleeping to working or waiting
 let dragId = null;
 
 // groupOrder keeps the agents of one project next to each other: projects
@@ -397,7 +398,7 @@ function render() {
 function cardHTML(s, now, span, color) {
   const style = [span && `grid-column: span ${span}`, color && `--group: ${color}`].filter(Boolean).join("; ");
   return `<div class="card ${s.status}${color ? " tinted" : ""}"${style ? ` style="${style}"` : ""} title="${esc(s.cwd)}" draggable="true" data-id="${esc(s.id)}" data-slot="${s.slot}">
-      <div class="head">${mascotSVG(s.mascot, s.status)}<span class="badge">${esc(t(`status.${s.status}`))}</span></div>
+      <div class="head">${mascotSVG(s.mascot, s.status, s.id in wokeAt ? Date.now() - wokeAt[s.id] : null)}<span class="badge">${esc(t(`status.${s.status}`))}</span></div>
       <p class="name"><span>${esc(s.project)}</span></p>
       <p class="line agent" title="${esc(s.client && t(`client.${s.client}`) !== `client.${s.client}` ? t("runsIn", { client: t(`client.${s.client}`) }) : "")}">${esc(agentLine(s))}</p>
       <p class="line title">${esc(s.title || t("newSession"))}</p>
@@ -439,6 +440,18 @@ function jumpToNewWait() {
   }
 }
 
+// noteWakeUps remembers agents that just went from sleeping (done or idle) to
+// working or waiting, so their mascot plays its wake-up frames.
+function noteWakeUps() {
+  const asleep = st => st === "done" || st === "idle";
+  for (const s of latest.sessions) {
+    if (asleep(lastStatus[s.id]) && !asleep(s.status)) {
+      wokeAt[s.id] = Date.now();
+      setTimeout(render, WAKE + 50); // switch to the normal animation once awake
+    }
+  }
+}
+
 function onState(data) {
   latest = data;
   offset = new Date(latest.now).getTime() - Date.now();
@@ -447,6 +460,7 @@ function onState(data) {
     translateStatic();
   }
   jumpToNewWait();
+  noteWakeUps();
   lastStatus = Object.fromEntries(latest.sessions.map(s => [s.id, s.status]));
   render();
   renderSettings();

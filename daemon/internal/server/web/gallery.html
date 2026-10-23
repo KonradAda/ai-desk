@@ -9,7 +9,7 @@
   h1 { font-size: 20px; font-weight: 600; margin: 0 0 4px; }
   h2 { font-size: 15px; font-weight: 600; margin: 28px 0 12px; }
   p { color: #a3a199; font-size: 13px; margin: 0; }
-  .table { display: grid; grid-template-columns: 90px repeat(4, 172px); gap: 10px; align-items: center; }
+  .table { display: grid; grid-template-columns: 90px repeat(5, 172px); gap: 10px; align-items: center; }
   .colors { display: grid; grid-template-columns: repeat(4, 172px); gap: 10px; }
   .head { font-size: 12px; color: #a3a199; text-align: center; }
   .row { font-size: 14px; text-align: right; padding-right: 6px; }
@@ -36,9 +36,13 @@ const STATES = [
   ["waiting", "Needs you: pulses"],
   ["done", "Done: snores"],
   ["idle", "Idle: snores"],
+  ["waking", "Waking up (when work starts)"],
 ];
 const NAMES = ["Round", "Antennas", "Ghost", "Slime"];
-const cell = (index, status) => `<div class="cell ${status}">${mascotSVG(index, status)}</div>`;
+// "waking" isn't a status: it's working right after sleeping, shown from the start.
+const cell = (index, status) => status === "waking"
+  ? `<div class="cell working wake" data-index="${index}">${mascotSVG(index, "working", 0)}</div>`
+  : `<div class="cell ${status}">${mascotSVG(index, status)}</div>`;
 
 let html = `<div></div>${STATES.map(([, label]) => `<div class="head">${label}</div>`).join("")}`;
 NAMES.forEach((name, shape) => {
@@ -46,6 +50,19 @@ NAMES.forEach((name, shape) => {
 });
 document.getElementById("states").innerHTML = html;
 document.getElementById("colors").innerHTML = COLORS.map((_, i) => cell(i, "working")).join("");
+
+// Replay the wake-up: asleep for a moment, wake up, work for a moment, again.
+setInterval(() => {
+  const t = Date.now() % 4000;
+  document.querySelectorAll(".wake").forEach(el => {
+    const i = Number(el.dataset.index);
+    const want = t < 1000 ? "sleep" : t < 1000 + WAKE ? "wake" : "work";
+    if (el.dataset.phase === want) return;
+    el.dataset.phase = want;
+    el.className = `cell wake ${want === "sleep" ? "done" : "working"}`;
+    el.innerHTML = want === "sleep" ? mascotSVG(i, "done") : want === "wake" ? mascotSVG(i, "working", 0) : mascotSVG(i, "working");
+  });
+}, 50);
 </script>
 </body>
 </html>

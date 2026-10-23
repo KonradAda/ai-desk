@@ -16,3 +16,21 @@ svg.mascot { image-rendering: pixelated; flex-shrink: 0; }
   15% { opacity: 1 }
   100% { transform: translate(14px, -26px) scale(1.3); opacity: 0 }
 }
+/* Waking up (1.2 s = WAKE in mascot.js): four frames shown in turn, played once.
+   The last one, wide awake, stays and hops up a little. While waking, the
+   card's own hop or pulse waits. */
+svg.mascot.waking { animation: none; }
+.mascot .wk { opacity: 0; animation-duration: 1.2s; animation-timing-function: linear; animation-iteration-count: 1; animation-fill-mode: forwards; }
+.mascot .wk0 { animation-name: wk0; }
+.mascot .wk1 { animation-name: wk1; }
+.mascot .wk2 { animation-name: wk2; }
+.mascot .wk3 { animation-name: wk3; }
+@keyframes wk0 { 0%, 29.99% { opacity: 1 } 30%, 100% { opacity: 0 } }
+@keyframes wk1 { 0%, 29.99% { opacity: 0 } 30%, 54.99% { opacity: 1 } 55%, 100% { opacity: 0 } }
+@keyframes wk2 { 0%, 54.99% { opacity: 0 } 55%, 66.99% { opacity: 1 } 67%, 100% { opacity: 0 } }
+@keyframes wk3 {
+  0%, 66.99% { opacity: 0; transform: translateY(0) }
+  67% { opacity: 1; transform: translateY(0) }
+  80% { opacity: 1; transform: translateY(-4px) }
+  100% { opacity: 1; transform: translateY(0) }
+}

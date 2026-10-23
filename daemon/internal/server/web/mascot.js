@@ -31,35 +31,56 @@ const MAGIC = { H: "#534AB7", Y: "#F2C14E", B: "#8A5A2B", "*": "#7FD6FF" };
 // One snore (breath in and out) takes this long; the Zzz rise to the same rhythm.
 const SNORE = 3000;
 
-function mascotSVG(index, status) {
+// Waking up takes this long (see the wk0-wk3 frames in mascot.css).
+const WAKE = 1200;
+
+// mascotSVG draws the mascot for an agent. wokeAgo, when set, is how many ms
+// ago the agent went from sleeping to working or waiting; for the first WAKE
+// ms the mascot plays its wake-up frames instead of the status animation.
+function mascotSVG(index, status, wokeAgo = null) {
   const color = COLORS[index % COLORS.length];
   const shape = SHAPES[index % SHAPES.length];
-  const rows = status === "done" || status === "idle" ? shape.sleep : shape.awake;
   const u = 6;
   const cell = (x, y, fill) => `<rect x="${x*u}" y="${y*u}" width="${u}" height="${u}" fill="${fill}"/>`;
   // On shapes with something sticking out on top (antennas, the slime's drop)
   // the hat sits one row lower and covers it.
-  const hatTop = rows[0].replace(/\./g, "").length < 4 ? 1 : 0;
+  const hatTop = shape.awake[0].replace(/\./g, "").length < 4 ? 1 : 0;
   const bodyTop = 4;
   // Animations are timed by the wall clock (a negative delay), so redrawing the card doesn't restart them.
   const clock = period => -(Date.now() % period);
   const asleep = status === "done" || status === "idle";
-
-  let body = "";
-  rows.forEach((row, y) => [...row].forEach((ch, x) => {
-    const py = bodyTop + y;
-    if ((ch === "X" || ch === "A") && py >= hatTop + HAT.length) body += cell(x, py, color);
-    else if (ch === "O") body += cell(x, py, EYE);
-    // A closed eye is a thin lid line on the body color, so it doesn't read as an open eye.
-    else if (ch === "-") body += cell(x, py, color) + `<rect x="${x*u}" y="${py*u+u/2}" width="${u}" height="${u/3}" fill="${EYE}"/>`;
-  }));
+  const waking = wokeAgo !== null && wokeAgo < WAKE;
   // The purple mascot would blend into the purple hat, so it gets a burgundy one.
   const hat = { ...MAGIC, H: color === "#7F77DD" ? "#993556" : MAGIC.H };
-  HAT.forEach((row, y) => [...row].forEach((ch, x) => { if (ch !== ".") body += cell(x, hatTop + y, hat[ch]); }));
 
-  // A sleeping mascot snores: the body and hat swell and sink with each breath.
-  let out = asleep ? `<g class="snore" style="animation-delay:${clock(SNORE)}ms">${body}</g>` : body;
+  // drawBody draws body and hat; halfOpen turns open eyes into sleepy half-open ones.
+  const drawBody = (rows, halfOpen = false) => {
+    let body = "";
+    rows.forEach((row, y) => [...row].forEach((ch, x) => {
+      const py = bodyTop + y;
+      if ((ch === "X" || ch === "A") && py >= hatTop + HAT.length) body += cell(x, py, color);
+      else if (ch === "O" && halfOpen) body += cell(x, py, color) + `<rect x="${x*u}" y="${py*u+u/2}" width="${u}" height="${u/2}" fill="${EYE}"/>`;
+      else if (ch === "O") body += cell(x, py, EYE);
+      // A closed eye is a thin lid line on the body color, so it doesn't read as an open eye.
+      else if (ch === "-") body += cell(x, py, color) + `<rect x="${x*u}" y="${py*u+u/2}" width="${u}" height="${u/3}" fill="${EYE}"/>`;
+    }));
+    HAT.forEach((row, y) => [...row].forEach((ch, x) => { if (ch !== ".") body += cell(x, hatTop + y, hat[ch]); }));
+    return body;
+  };
+
+  let out;
+  if (waking) {
+    // Wake-up frames: still asleep, eyes half open, a blink, then wide awake with a little hop.
+    const frames = [drawBody(shape.sleep), drawBody(shape.awake, true), drawBody(shape.sleep), drawBody(shape.awake)];
+    out = frames.map((f, i) => `<g class="wk wk${i}" style="animation-delay:${-wokeAgo}ms">${f}</g>`).join("");
+  } else if (asleep) {
+    // A sleeping mascot snores: the body and hat swell and sink with each breath.
+    out = `<g class="snore" style="animation-delay:${clock(SNORE)}ms">${drawBody(shape.sleep)}</g>`;
+  } else {
+    out = drawBody(shape.awake);
+  }
   WAND.forEach(([x, y, ch]) => { out += cell(x, y, MAGIC[ch]); });
+  if (waking) return `<svg class="mascot waking" width="62" height="48" viewBox="0 0 78 60" shape-rendering="crispEdges" aria-hidden="true">${out}</svg>`;
   if (status === "working") {
     const period = 700;
     out += SPARKLES.map((pts, i) =>
