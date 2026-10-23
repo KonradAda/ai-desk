@@ -44,7 +44,7 @@
      A group cut across rows keeps the color on both parts. */
   .group.tinted, .card.tinted { background: color-mix(in srgb, var(--group) 11%, var(--card)); border-color: color-mix(in srgb, var(--group) 35%, var(--card-border)); }
   .group.tinted .card + .card { border-left-color: color-mix(in srgb, var(--group) 30%, var(--card-border)); }
-  .tinted .name span { background: color-mix(in srgb, var(--group) 55%, var(--card)); padding: 0 8px; border-radius: 6px; }
+  .tinted .name .proj { background: color-mix(in srgb, var(--group) 55%, var(--card)); padding: 0 8px; border-radius: 6px; }
   .group .card { flex: 1 1 0; border: 0; border-radius: 0; background: none; }
   .group .card + .card { border-left: 1px solid var(--card-border); }
   .group .card.waiting { border: 0; box-shadow: inset 0 0 0 2px var(--waiting-border); }
@@ -61,7 +61,9 @@
   .name { font-size: 17px; font-weight: 600; margin: 4px 0 0; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-shrink: 0; }
   .line { font-size: 13px; color: var(--muted); margin: 0; line-height: 1.4; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-shrink: 0; }
   .action { color: var(--text); }
-  .title { font-style: italic; padding-right: 2px; /* italic overhangs to the right */ }
+  /* Card heading: "project / session title"; the title is lighter and is what gets cut with "…". */
+  .name .sep, .name .sess { font-weight: 400; color: var(--muted); }
+  .name .sep { margin: 0 .3em; }
   .agent { font-size: 12px; }
   .size-l .agent { font-size: 17px; }
   .size-m .agent { font-size: 13px; }
@@ -432,15 +434,19 @@ function render() {
   }).join("");
 }
 
+// nameHTML is the card heading: the project, then after a slash the session's title.
+function nameHTML(s) {
+  return `<p class="name" title="${esc(`${s.project} / ${s.title || t("newSession")}`)}"><span class="proj">${esc(s.project)}</span><span class="sep">/</span><span class="sess">${esc(s.title || t("newSession"))}</span></p>`;
+}
+
 // cardHTML draws one agent; span and color are set for a card that stands on
 // its own in the grid (color when it's part of a group cut across rows).
 function cardHTML(s, now, span, color) {
   const style = [span && `grid-column: span ${span}`, color && `--group: ${color}`].filter(Boolean).join("; ");
   return `<div class="card ${s.status}${color ? " tinted" : ""}"${style ? ` style="${style}"` : ""} title="${esc(s.cwd)}" draggable="true" data-id="${esc(s.id)}" data-slot="${s.slot}">
       <div class="head">${mascotSVG(s.mascot, s.status, changed[s.id] && { kind: changed[s.id].kind, ago: Date.now() - changed[s.id].at })}<span class="head-right"><span class="badge">${esc(t(`status.${s.status}`))}</span>${latest.settings.session_mode === "manual" ? `<button class="remove" data-remove="${esc(s.id)}" aria-label="${esc(t("removeAgent"))}" title="${esc(t("removeAgent"))}">×</button>` : ""}</span></div>
-      <p class="name"><span>${esc(s.project)}</span></p>
+      ${nameHTML(s)}
       <p class="line agent" title="${esc(s.client && t(`client.${s.client}`) !== `client.${s.client}` ? t("runsIn", { client: t(`client.${s.client}`) }) : "")}">${esc(agentLine(s))}</p>
-      <p class="line title">${esc(s.title || t("newSession"))}</p>
       <p class="line action">${esc(actionText(s.action))}</p>
       ${stepText(s) ? `<p class="line">${esc(stepText(s))}</p>` : ""}
       <div class="foot">
@@ -548,7 +554,7 @@ function renderPicker() {
     ? `<div class="pick-empty">${esc(t("allOnScreen"))}</div>`
     : off.map(s => `<button class="pick ${s.status}" data-pick="${esc(s.id)}">
         ${mascotSVG(s.mascot, s.status)}
-        <span class="pick-text"><p class="name">${esc(s.project)}</p><p class="line title">${esc(s.title || t("newSession"))}</p></span>
+        <span class="pick-text">${nameHTML(s)}</span>
         <span class="badge">${esc(t(`status.${s.status}`))}</span>
       </button>`).join("");
 }
