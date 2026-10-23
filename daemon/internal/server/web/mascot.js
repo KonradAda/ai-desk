@@ -31,8 +31,8 @@ const MAGIC = { H: "#534AB7", Y: "#F2C14E", B: "#8A5A2B", "*": "#7FD6FF" };
 // One snore (breath in and out) takes this long; the Zzz rise to the same rhythm.
 const SNORE = 3000;
 
-// Waking up takes this long (see the wk0-wk3 frames in mascot.css).
-const WAKE = 1200;
+// Waking up takes this long (see the wk0-wk6 frames in mascot.css).
+const WAKE = 1800;
 
 // mascotSVG draws the mascot for an agent. wokeAgo, when set, is how many ms
 // ago the agent went from sleeping to working or waiting; for the first WAKE
@@ -70,8 +70,9 @@ function mascotSVG(index, status, wokeAgo = null) {
 
   let out;
   if (waking) {
-    // Wake-up frames: still asleep, eyes half open, a blink, then wide awake with a little hop.
-    const frames = [drawBody(shape.sleep), drawBody(shape.awake, true), drawBody(shape.sleep), drawBody(shape.awake)];
+    // Wake-up frames: still asleep, eyes half open, open, two blinks, then wide awake with a little hop.
+    const closed = drawBody(shape.sleep), half = drawBody(shape.awake, true), open = drawBody(shape.awake);
+    const frames = [closed, half, open, closed, open, closed, open];
     out = frames.map((f, i) => `<g class="wk wk${i}" style="animation-delay:${-wokeAgo}ms">${f}</g>`).join("");
   } else if (asleep) {
     // A sleeping mascot snores: the body and hat swell and sink with each breath.

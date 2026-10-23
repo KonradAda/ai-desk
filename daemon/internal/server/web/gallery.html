@@ -53,7 +53,7 @@ document.getElementById("colors").innerHTML = COLORS.map((_, i) => cell(i, "work
 
 // Replay the wake-up: asleep for a moment, wake up, work for a moment, again.
 setInterval(() => {
-  const t = Date.now() % 4000;
+  const t = Date.now() % 5000;
   document.querySelectorAll(".wake").forEach(el => {
     const i = Number(el.dataset.index);
     const want = t < 1000 ? "sleep" : t < 1000 + WAKE ? "wake" : "work";
