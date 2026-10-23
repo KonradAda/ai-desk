@@ -34,7 +34,7 @@ func LoadLayout(path string) *Layout {
 
 func (l *Layout) preferred(project string) (int, bool) {
 	slot, ok := l.Slots[layoutKey(project)]
-	return slot, ok && slot >= 0 && slot < MaxCards
+	return slot, ok && slot >= 0 && slot < MaxSlots
 }
 
 // reservedBy reports whether another project prefers this slot.

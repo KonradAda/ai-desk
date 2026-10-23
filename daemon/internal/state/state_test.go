@@ -28,12 +28,12 @@ func TestSessionLifecycle(t *testing.T) {
 	if len(got) != 1 {
 		t.Fatalf("want 1 session, got %d", len(got))
 	}
-	if got[0].Project != "api-backend" || got[0].Status != StatusWorking || got[0].Action != "Edytuje auth.ts" {
+	if got[0].Project != "api-backend" || got[0].Status != StatusWorking || got[0].Action != (Action{Kind: ActEdit, Arg: "auth.ts"}) {
 		t.Fatalf("unexpected session: %+v", got[0])
 	}
 
 	s.Apply(Event{SessionID: "a", HookEventName: "Notification", Message: "Claude needs your permission to use Bash"})
-	if got := snapshot(s)[0]; got.Status != StatusWaiting || got.Action != "Prosi o zgodę: Bash" {
+	if got := snapshot(s)[0]; got.Status != StatusWaiting || got.Action != (Action{Kind: ActPermission, Arg: "Bash"}) {
 		t.Fatalf("unexpected waiting session: %+v", got)
 	}
 
@@ -64,11 +64,8 @@ func TestTodoSteps(t *testing.T) {
 	}
 }
 
-// snapshot is Snapshot without the hidden count, for tests that don't need it.
-func snapshot(s *Store) []Session {
-	v, _ := s.Snapshot()
-	return v
-}
+// snapshot returns all sessions, without hiding finished ones.
+func snapshot(s *Store) []Session { return s.Snapshot(0) }
 
 func slotOf(s *Store, id string) int {
 	for _, sess := range snapshot(s) {
@@ -103,19 +100,40 @@ func TestSlotsStayFixedWhileAgentsWork(t *testing.T) {
 	}
 }
 
-func TestOverflowWaitsForFreeSlot(t *testing.T) {
+func TestNoLimitOnSessions(t *testing.T) {
 	s, _ := newTestStore()
-	for i := range MaxCards + 1 {
+	for i := range 8 {
 		start(s, string(rune('a'+i)), "/p"+string(rune('a'+i)))
 	}
-	visible, hidden := s.Snapshot()
-	if len(visible) != MaxCards || hidden != 1 {
-		t.Fatalf("want %d visible and 1 hidden, got %d and %d", MaxCards, len(visible), hidden)
+	got := snapshot(s)
+	if len(got) != 8 {
+		t.Fatalf("want all 8 sessions, got %d", len(got))
 	}
-	freed := slotOf(s, "c")
-	s.Apply(Event{SessionID: "c", HookEventName: "SessionEnd"})
-	if got := slotOf(s, "g"); got != freed {
-		t.Fatalf("hidden session should take freed slot %d, got %d", freed, got)
+	for i := 1; i < len(got); i++ {
+		if got[i].Slot <= got[i-1].Slot {
+			t.Fatalf("sessions must be ordered by unique slots: %d then %d", got[i-1].Slot, got[i].Slot)
+		}
+	}
+}
+
+func TestHideDoneAfter(t *testing.T) {
+	s, now := newTestStore()
+	s.Apply(Event{SessionID: "done", Cwd: "/a", HookEventName: "Stop"})
+	s.Apply(Event{SessionID: "busy", Cwd: "/b", HookEventName: "UserPromptSubmit"})
+	*now = now.Add(10 * time.Minute)
+
+	if n := len(s.Snapshot(15 * time.Minute)); n != 2 {
+		t.Fatalf("finished 10 min ago should still show with a 15 min limit, got %d", n)
+	}
+	got := s.Snapshot(5 * time.Minute)
+	if len(got) != 1 || got[0].ID != "busy" {
+		t.Fatalf("finished session should be hidden after 5 min, got %+v", got)
+	}
+
+	// Starting work again brings it back.
+	s.Apply(Event{SessionID: "done", HookEventName: "UserPromptSubmit"})
+	if n := len(s.Snapshot(5 * time.Minute)); n != 2 {
+		t.Fatalf("session working again should show, got %d", n)
 	}
 }
 
@@ -142,7 +160,7 @@ func TestMoveSwapsAndIsRemembered(t *testing.T) {
 		t.Fatalf("want remembered slot 5, got %d", got)
 	}
 
-	if s.Move("nope", 1) || s.Move("a2", MaxCards) {
+	if s.Move("nope", 1) || s.Move("a2", MaxSlots) {
 		t.Fatal("invalid moves should be rejected")
 	}
 }
@@ -190,7 +208,7 @@ func TestMascotStablePerProject(t *testing.T) {
 
 func TestMascotsUniqueOnScreen(t *testing.T) {
 	s, _ := newTestStore()
-	for i := range MaxCards {
+	for i := range 6 {
 		s.Apply(Event{SessionID: string(rune('a' + i)), Cwd: "/p" + string(rune('a'+i)), HookEventName: "SessionStart"})
 	}
 	seen := map[int]bool{}

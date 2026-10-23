@@ -52,6 +52,7 @@ JSON rozdzielany znakiem nowej linii (NDJSON) po USB CDC. Daemon wysyła pełny 
 - **Zatwierdzanie z urządzenia** (np. zgoda na komendę) to dopiero późniejsza wersja. Wymaga przemyślenia bezpieczeństwa: każdy, kto dotknie ekranu, może coś zatwierdzić. W v1 tylko podgląd i przeniesienie do sesji.
 - **Najpierw Claude Code, ale bez zamykania drogi do innych narzędzi.** Źródła danych za interfejsem, żeby dało się dodać Codex, Gemini CLI itd.
 - Kod, nazwy i komentarze po angielsku. Dokumentacja i notatki projektowe po polsku.
+- **Żadnych tekstów dla użytkownika na sztywno w kodzie.** Daemon wysyła kody (`status`, `action.kind` + `action.arg`), a wyświetlacz tłumaczy je przez słownik (`STRINGS` w `web/index.html`, później to samo w firmware). Domyślny i na razie jedyny język to angielski. Nowy język = nowy wpis w `STRINGS` z tymi samymi kluczami + kod w `settings.Languages`. Wyjątek: tekst pisany przez samego agenta (`action.kind` = `text`/`notice`) i tytuły sesji pokazujemy bez tłumaczenia.
 - Commity i PR-y bez dopisków o Claude: żadnego `Co-Authored-By: Claude` ani „Generated with Claude Code”.
 
 ## Roadmapa
@@ -80,8 +81,10 @@ Demo bez prawdziwych agentów (przy działającym daemonie):
 while IFS= read -r l; do printf '%s' "$l" | ./aidesk.exe hook; done < testdata/demo-events.jsonl
 ```
 
-Karty mają stałe miejsca (sloty 0–5): agent nie zmienia pozycji, dopóki trwa sesja. Przeciągnięcie karty w symulatorze zapisuje miejsce projektu w `%APPDATA%\aidesk\layout.json` (na Linuksie i macOS w katalogu konfiguracji użytkownika), więc kolejne sesje tego projektu wracają na to samo miejsce. Nazwa projektu to katalog główny repozytorium git (albo katalog roboczy, gdy nie ma gita).
+Liczba agentów nie jest ograniczona: daemon wysyła wszystkie sesje uporządkowane według slotu, a ekran dzieli je na strony (ustawienie „agentów na ekran”, 1–6). Karty mają stałe miejsca w tej kolejności: agent nie zmienia pozycji, dopóki trwa sesja. Przeciągnięcie karty w symulatorze zapisuje miejsce projektu w `%APPDATA%\aidesk\layout.json` (na Linuksie i macOS w katalogu konfiguracji użytkownika), więc kolejne sesje tego projektu wracają na to samo miejsce. Nazwa projektu to katalog główny repozytorium git (albo katalog roboczy, gdy nie ma gita).
 
-Zmienne środowiskowe: `AIDESK_ADDR` (domyślnie `127.0.0.1:7777`), `AIDESK_DEBUG=1` (hook wypisuje błędy na stderr zamiast milczeć).
+Ustawienia (`settings.json` obok `layout.json`, API `GET/PUT /api/settings`, wysyłane też w strumieniu stanu): język, agentów na ekran, przeskakiwanie do strony agenta, który czeka, ukrywanie skończonych po X minutach. Nowe ustawienie dodajesz w `internal/settings` (pole, domyślna wartość, walidacja) i w panelu w `web/index.html`.
+
+Zmienne środowiskowe: `AIDESK_ADDR` (domyślnie `127.0.0.1:7777`), `AIDESK_DEBUG=1` (hook wypisuje błędy na stderr zamiast milczeć), `AIDESK_CONFIG_DIR` (inny katalog na ustawienia i układ, np. dla testowego daemona na innym porcie, żeby nie ruszać prawdziwych).
 
 Uwaga przy testach w Git Bash: `echo` z backslashami psuje ścieżki Windows w JSON. Używaj `printf '%s'` i danych z pliku.

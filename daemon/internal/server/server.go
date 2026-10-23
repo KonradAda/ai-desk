@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"aidesk/internal/settings"
 	"aidesk/internal/state"
 )
 
@@ -18,22 +19,25 @@ import (
 var webFS embed.FS
 
 type Server struct {
-	store *state.Store
+	store    *state.Store
+	settings *settings.Store
 
 	mu   sync.Mutex
 	subs map[chan struct{}]struct{}
 }
 
-func New(store *state.Store) *Server {
-	s := &Server{store: store, subs: map[chan struct{}]struct{}{}}
+func New(store *state.Store, prefs *settings.Store) *Server {
+	s := &Server{store: store, settings: prefs, subs: map[chan struct{}]struct{}{}}
 	store.OnChange(s.notify)
 	return s
 }
 
 type stateResponse struct {
-	Now      time.Time       `json:"now"`
-	Sessions []state.Session `json:"sessions"`
-	Hidden   int             `json:"hidden"`
+	Now      time.Time         `json:"now"`
+	Sessions []state.Session   `json:"sessions"`
+	Settings settings.Settings `json:"settings"`
+	// Languages lists the translations the display may offer in its settings.
+	Languages []string `json:"languages"`
 }
 
 func (s *Server) Handler() http.Handler {
@@ -44,7 +48,28 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/state", s.handleState)
 	mux.HandleFunc("GET /api/stream", s.handleStream)
 	mux.HandleFunc("POST /api/move", s.handleMove)
+	mux.HandleFunc("GET /api/settings", s.handleGetSettings)
+	mux.HandleFunc("PUT /api/settings", s.handlePutSettings)
 	return mux
+}
+
+func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(s.settings.Get())
+}
+
+func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
+	next := s.settings.Get() // fields left out of the request keep their value
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&next); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	if err := s.settings.Set(next); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	s.notify()
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) handleMove(w http.ResponseWriter, r *http.Request) {
@@ -130,8 +155,13 @@ func (s *Server) notify() {
 }
 
 func (s *Server) snapshot() stateResponse {
-	sessions, hidden := s.store.Snapshot()
-	return stateResponse{Now: time.Now(), Sessions: sessions, Hidden: hidden}
+	prefs := s.settings.Get()
+	return stateResponse{
+		Now:       time.Now(),
+		Sessions:  s.store.Snapshot(prefs.HideDoneAfter()),
+		Settings:  prefs,
+		Languages: settings.Languages,
+	}
 }
 
 func shortID(id string) string {

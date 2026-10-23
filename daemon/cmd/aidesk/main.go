@@ -15,6 +15,7 @@ import (
 
 	"aidesk/internal/hook"
 	"aidesk/internal/server"
+	"aidesk/internal/settings"
 	"aidesk/internal/state"
 )
 
@@ -45,13 +46,26 @@ func main() {
 }
 
 func serve(addr string) {
-	var layoutPath string
-	if dir, err := os.UserConfigDir(); err == nil {
-		layoutPath = filepath.Join(dir, "aidesk", "layout.json")
+	var layoutPath, settingsPath string
+	if dir := configDir(); dir != "" {
+		layoutPath = filepath.Join(dir, "layout.json")
+		settingsPath = filepath.Join(dir, "settings.json")
 	}
-	srv := server.New(state.NewStore(state.LoadLayout(layoutPath)))
+	srv := server.New(state.NewStore(state.LoadLayout(layoutPath)), settings.Load(settingsPath))
 	log.Printf("aidesk listening on http://%s", addr)
 	log.Fatal(http.ListenAndServe(addr, srv.Handler()))
+}
+
+// configDir is where settings and layout are saved: AIDESK_CONFIG_DIR if set
+// (handy for a separate test daemon), else the user's config directory.
+func configDir() string {
+	if dir := os.Getenv("AIDESK_CONFIG_DIR"); dir != "" {
+		return dir
+	}
+	if dir, err := os.UserConfigDir(); err == nil {
+		return filepath.Join(dir, "aidesk")
+	}
+	return ""
 }
 
 var hookEvents = []string{

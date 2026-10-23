@@ -25,8 +25,9 @@ const (
 // MascotCount is how many mascot variants the display knows about.
 const MascotCount = 8
 
-// MaxCards is how many sessions fit on the device screen.
-const MaxCards = 6
+// MaxSlots caps card positions. Slots only order the cards; the display
+// splits them into pages, so there is no limit of one screen.
+const MaxSlots = 60
 
 // staleAfter drops sessions that have not sent any event for this long
 // (e.g. the terminal was closed without a SessionEnd event).
@@ -37,12 +38,41 @@ type Steps struct {
 	Total int `json:"total"`
 }
 
+// Action says what an agent is doing as a language-neutral code, so the
+// display translates it. Arg carries the detail (file name, tool, command).
+type Action struct {
+	Kind string `json:"kind"`
+	Arg  string `json:"arg,omitempty"`
+}
+
+// Action kinds. "text" is free text written by the agent itself (e.g. the
+// description of a shell command) and is shown as is.
+const (
+	ActIdle       = "idle"
+	ActThinking   = "thinking"
+	ActEdit       = "edit"
+	ActRead       = "read"
+	ActRun        = "run"
+	ActText       = "text"
+	ActSearchCode = "search_code"
+	ActSearchWeb  = "search_web"
+	ActDelegate   = "delegate"
+	ActPlan       = "plan"
+	ActMCP        = "mcp"
+	ActTool       = "tool"
+	ActPermission = "permission"
+	ActInput      = "input"
+	ActAttention  = "attention"
+	ActNotice     = "notice"
+	ActDone       = "done"
+)
+
 type Session struct {
 	ID         string    `json:"id"`
 	Project    string    `json:"project"`
 	Cwd        string    `json:"cwd"`
 	Status     Status    `json:"status"`
-	Action     string    `json:"action"`
+	Action     Action    `json:"action"`
 	TurnStart  time.Time `json:"turn_start"`
 	FinishedAt time.Time `json:"finished_at,omitzero"`
 	UpdatedAt  time.Time `json:"updated_at"`
@@ -52,8 +82,7 @@ type Session struct {
 	// transcript, or the start of the first prompt until a title exists.
 	Title          string `json:"title"`
 	titleCheckedAt time.Time
-	// Slot is the fixed card position on screen (0..MaxCards-1), or -1 when
-	// all slots are taken and the session waits off screen.
+	// Slot is the card's fixed position in the order of cards (0..MaxSlots-1).
 	Slot int `json:"slot"`
 }
 
@@ -120,7 +149,6 @@ func (s *Store) apply(ev Event) {
 	now := s.now()
 	if ev.HookEventName == "SessionEnd" {
 		delete(s.sessions, ev.SessionID)
-		s.fillSlots()
 		return
 	}
 
@@ -132,7 +160,7 @@ func (s *Store) apply(ev Event) {
 			Project:   project,
 			Cwd:       ev.Cwd,
 			Status:    StatusIdle,
-			Action:    "Czeka na polecenie",
+			Action:    Action{Kind: ActIdle},
 			TurnStart: now,
 			Mascot:    s.freeMascot(project),
 			Slot:      s.pickSlot(project),
@@ -145,7 +173,7 @@ func (s *Store) apply(ev Event) {
 	switch ev.HookEventName {
 	case "UserPromptSubmit":
 		sess.Status = StatusWorking
-		sess.Action = "Myśli…"
+		sess.Action = Action{Kind: ActThinking}
 		sess.TurnStart = now
 		sess.FinishedAt = time.Time{}
 		if sess.Title == "" {
@@ -165,48 +193,41 @@ func (s *Store) apply(ev Event) {
 		sess.Action = describeNotification(ev.Message)
 	case "Stop":
 		sess.Status = StatusDone
-		sess.Action = "Gotowe"
+		sess.Action = Action{Kind: ActDone}
 		sess.FinishedAt = now
 	}
 }
 
-// Snapshot returns the sessions on screen ordered by slot, and how many
-// more are waiting off screen because all slots are taken.
-func (s *Store) Snapshot() (visible []Session, hidden int) {
+// Snapshot returns all sessions ordered by slot. Sessions that finished more
+// than hideDoneAfter ago are left out (0 keeps them until they end).
+func (s *Store) Snapshot(hideDoneAfter time.Duration) []Session {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	now := s.now()
-	pruned := false
+	out := make([]Session, 0, len(s.sessions))
 	for id, sess := range s.sessions {
 		if now.Sub(sess.UpdatedAt) > staleAfter {
 			delete(s.sessions, id)
-			pruned = true
-		}
-	}
-	if pruned {
-		s.fillSlots()
-	}
-	visible = make([]Session, 0, MaxCards)
-	for _, sess := range s.sessions {
-		if sess.Slot < 0 {
-			hidden++
 			continue
 		}
-		visible = append(visible, *sess)
+		if hideDoneAfter > 0 && sess.Status == StatusDone && now.Sub(sess.FinishedAt) > hideDoneAfter {
+			continue
+		}
+		out = append(out, *sess)
 	}
-	sort.Slice(visible, func(i, j int) bool { return visible[i].Slot < visible[j].Slot })
-	return visible, hidden
+	sort.Slice(out, func(i, j int) bool { return out[i].Slot < out[j].Slot })
+	return out
 }
 
 // Move puts a session into the given slot, swapping with whatever card is there,
 // and remembers the new places of both projects for future sessions.
 func (s *Store) Move(id string, slot int) bool {
-	if slot < 0 || slot >= MaxCards {
+	if slot < 0 || slot >= MaxSlots {
 		return false
 	}
 	s.mu.Lock()
 	sess, ok := s.sessions[id]
-	if !ok || sess.Slot < 0 {
+	if !ok {
 		s.mu.Unlock()
 		return false
 	}
@@ -229,63 +250,25 @@ func (s *Store) Move(id string, slot int) bool {
 
 // pickSlot chooses a free slot for a new session: the project's remembered slot
 // if free, then a free slot no other project has claimed, then any free slot.
-// It returns -1 when the screen is full.
 func (s *Store) pickSlot(project string) int {
 	used := map[int]bool{}
 	for _, sess := range s.sessions {
-		if sess.Slot >= 0 {
-			used[sess.Slot] = true
-		}
+		used[sess.Slot] = true
 	}
 	if slot, ok := s.layout.preferred(project); ok && !used[slot] {
 		return slot
 	}
-	for slot := range MaxCards {
+	for slot := range MaxSlots {
 		if !used[slot] && !s.layout.reservedBy(slot, project) {
 			return slot
 		}
 	}
-	for slot := range MaxCards {
+	for slot := range MaxSlots {
 		if !used[slot] {
 			return slot
 		}
 	}
-	return -1
-}
-
-// fillSlots moves off-screen sessions into slots freed by ended sessions,
-// those that need attention first.
-func (s *Store) fillSlots() {
-	var waiting []*Session
-	for _, sess := range s.sessions {
-		if sess.Slot < 0 {
-			waiting = append(waiting, sess)
-		}
-	}
-	sort.Slice(waiting, func(i, j int) bool {
-		if pi, pj := priority(waiting[i].Status), priority(waiting[j].Status); pi != pj {
-			return pi < pj
-		}
-		return waiting[i].UpdatedAt.After(waiting[j].UpdatedAt)
-	})
-	for _, sess := range waiting {
-		if sess.Slot = s.pickSlot(sess.Project); sess.Slot < 0 {
-			return
-		}
-	}
-}
-
-// priority decides which off-screen session gets a freed slot first.
-func priority(st Status) int {
-	switch st {
-	case StatusWaiting:
-		return 0
-	case StatusWorking:
-		return 1
-	case StatusDone, StatusError:
-		return 2
-	}
-	return 3
+	return MaxSlots - 1
 }
 
 // freeMascot prefers the project's own mascot but skips ones already in use,
@@ -328,53 +311,52 @@ func mascotFor(project string) int {
 	return int(h.Sum32() % MascotCount)
 }
 
-func describeTool(name string, raw json.RawMessage) string {
+func describeTool(name string, raw json.RawMessage) Action {
 	var in struct {
 		FilePath    string `json:"file_path"`
 		Command     string `json:"command"`
 		Description string `json:"description"`
-		Pattern     string `json:"pattern"`
 	}
 	_ = json.Unmarshal(raw, &in)
 	file := filepath.Base(in.FilePath)
 
 	switch name {
 	case "Edit", "MultiEdit", "Write", "NotebookEdit":
-		return "Edytuje " + file
+		return Action{Kind: ActEdit, Arg: file}
 	case "Read":
-		return "Czyta " + file
+		return Action{Kind: ActRead, Arg: file}
 	case "Bash", "PowerShell":
 		if in.Description != "" {
-			return truncate(in.Description, 40)
+			return Action{Kind: ActText, Arg: truncate(in.Description, 40)}
 		}
-		return "Uruchamia: " + truncate(in.Command, 30)
+		return Action{Kind: ActRun, Arg: truncate(in.Command, 30)}
 	case "Grep", "Glob":
-		return "Szuka w kodzie"
+		return Action{Kind: ActSearchCode}
 	case "WebFetch", "WebSearch":
-		return "Szuka w sieci"
+		return Action{Kind: ActSearchWeb}
 	case "Task", "Agent":
-		return "Deleguje do subagenta"
+		return Action{Kind: ActDelegate}
 	case "TodoWrite":
-		return "Planuje kroki"
+		return Action{Kind: ActPlan}
 	}
 	if strings.HasPrefix(name, "mcp__") {
-		return "Używa narzędzia MCP"
+		return Action{Kind: ActMCP}
 	}
-	return "Używa " + name
+	return Action{Kind: ActTool, Arg: name}
 }
 
-// describeNotification shortens Claude Code notification messages to fit a card.
-func describeNotification(msg string) string {
+// describeNotification turns Claude Code notification messages into action codes.
+func describeNotification(msg string) Action {
 	const permission = "Claude needs your permission to use "
 	switch {
 	case strings.HasPrefix(msg, permission):
-		return "Prosi o zgodę: " + strings.TrimPrefix(msg, permission)
+		return Action{Kind: ActPermission, Arg: strings.TrimPrefix(msg, permission)}
 	case strings.Contains(msg, "waiting for your input"):
-		return "Czeka na Twoją odpowiedź"
+		return Action{Kind: ActInput}
 	case msg == "":
-		return "Czeka na Ciebie"
+		return Action{Kind: ActAttention}
 	}
-	return truncate(msg, 40)
+	return Action{Kind: ActNotice, Arg: truncate(msg, 40)}
 }
 
 func todoSteps(raw json.RawMessage) *Steps {

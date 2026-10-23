@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="pl">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -7,7 +7,7 @@
 <style>
   :root {
     --page: #e8e6df; --bezel: #1c1c1b; --screen: #121211; --card: #1f1f1d; --card-border: #2e2e2b;
-    --text: #f1efe8; --muted: #a3a199;
+    --text: #f1efe8; --muted: #a3a199; --accent: #378add;
     --working-bg: #0c447c; --working-fg: #b5d4f4;
     --waiting-bg: #633806; --waiting-fg: #fac775; --waiting-border: #ef9f27;
     --done-bg: #27500a; --done-fg: #c0dd97;
@@ -18,19 +18,24 @@
   * { box-sizing: border-box; }
   body { margin: 0; min-height: 100vh; background: var(--page); display: flex; align-items: center; justify-content: center;
          font-family: system-ui, "Segoe UI", sans-serif; padding: 16px; }
+  button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; padding: 0; }
   .device { background: var(--bezel); border-radius: 22px; padding: 18px; width: min(100%, 836px); }
   .screen { position: relative; width: 100%; aspect-ratio: 800 / 480; background: var(--screen); border-radius: 6px; overflow: hidden; }
   /* Everything inside is laid out at the device's native 800x480 and scaled to fit. */
   .native { position: absolute; top: 0; left: 0; width: 800px; height: 480px; transform-origin: 0 0;
-            padding: 12px; display: flex; flex-direction: column; gap: 10px; color: var(--text); }
-  .top { display: flex; justify-content: space-between; font-size: 13px; color: var(--muted); padding: 0 4px; }
+            padding: 10px 12px 12px; display: flex; flex-direction: column; gap: 8px; color: var(--text); }
+  .top { display: flex; justify-content: space-between; align-items: center; font-size: 13px; color: var(--muted); padding: 0 4px; height: 24px; }
+  .top-right { display: flex; align-items: center; gap: 12px; }
   .conn { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #e24b4a; margin-right: 6px; }
   .conn.on { background: #639922; }
+  .icon-btn { width: 28px; height: 24px; display: flex; align-items: center; justify-content: center; border-radius: 6px; color: var(--muted); }
+  .icon-btn:hover { background: var(--card); color: var(--text); }
+
   /* 6 columns so rows of 1, 2 or 3 cards all divide evenly; render() sets rows and spans. */
-  .grid { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(6, 1fr); grid-template-rows: 1fr; gap: 10px; }
+  .grid { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(6, 1fr); grid-template-rows: 1fr; gap: 10px; touch-action: pan-y; }
   .grid.rows-2 { grid-template-rows: 1fr 1fr; }
   .card { background: var(--card); border: 1px solid var(--card-border); border-radius: 12px; padding: 12px;
-          display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+          display: flex; flex-direction: column; gap: 6px; min-width: 0; min-height: 0; overflow: hidden; }
   .card.waiting { border: 2px solid var(--waiting-border); }
   .head { display: flex; justify-content: space-between; align-items: flex-start; height: 48px; }
   .badge { font-size: 12px; padding: 3px 10px; border-radius: 6px; white-space: nowrap; }
@@ -45,7 +50,7 @@
   .title { font-style: italic; margin-top: -4px; }
   .empty { grid-column: 1 / -1; grid-row: 1 / -1; display: flex; flex-direction: column; align-items: center; justify-content: center;
            gap: 12px; color: var(--muted); font-size: 15px; }
-  /* Bigger cards (1 or 2 agents on screen) get bigger mascots and text. */
+  /* Bigger cards (1 or 2 agents on a page) get bigger mascots and text. */
   .size-l .card { padding: 28px; gap: 12px; justify-content: center; }
   .size-l .head { height: auto; }
   .size-l svg.mascot { width: 216px; height: 120px; }
@@ -61,20 +66,123 @@
   .card[draggable] { cursor: grab; }
   .card.dragging { opacity: .4; }
   .drop { outline: 2px dashed var(--muted); outline-offset: -2px; }
-  svg.mascot { image-rendering: pixelated; }
+  svg.mascot { image-rendering: pixelated; flex-shrink: 0; }
   @keyframes bob { 0%, 100% { transform: translateY(0) } 50% { transform: translateY(-4px) } }
   @keyframes pulse { 0%, 100% { opacity: 1 } 50% { opacity: .4 } }
   .working svg.mascot { animation: bob .8s ease-in-out infinite; }
   .waiting svg.mascot { animation: pulse 1.1s ease-in-out infinite; }
+
+  .pager { display: flex; align-items: center; justify-content: center; gap: 14px; height: 28px; }
+  .pager[hidden] { display: none; }
+  .arrow { width: 44px; height: 28px; border-radius: 8px; color: var(--muted); font-size: 18px; }
+  .arrow:hover { background: var(--card); color: var(--text); }
+  .arrow:disabled { opacity: .25; cursor: default; background: none; }
+  .dots { display: flex; gap: 10px; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--card-border); }
+  .dot.current { background: var(--text); }
+  .dot.alert { background: var(--waiting-border); animation: pulse 1.1s ease-in-out infinite; }
+  .dot.alert.current { box-shadow: 0 0 0 2px var(--text); }
+
+  .panel { position: absolute; inset: 0; background: var(--screen); padding: 16px 24px; display: flex; flex-direction: column; gap: 14px; }
+  .panel[hidden] { display: none; }
+  .panel-head { display: flex; justify-content: space-between; align-items: center; }
+  .panel-head h2 { margin: 0; font-size: 20px; font-weight: 600; }
+  .setting { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 10px 0; border-bottom: 1px solid var(--card-border); }
+  .setting-label { font-size: 15px; }
+  .setting-hint { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .seg { display: flex; background: var(--card); border-radius: 8px; padding: 3px; gap: 2px; }
+  .seg button { min-width: 40px; height: 32px; padding: 0 10px; border-radius: 6px; font-size: 14px; color: var(--muted); }
+  .seg button.on { background: var(--accent); color: #fff; }
+  .toggle { width: 52px; height: 30px; border-radius: 15px; background: var(--card-border); position: relative; }
+  .toggle::after { content: ""; position: absolute; top: 3px; left: 3px; width: 24px; height: 24px; border-radius: 50%; background: var(--text); transition: left .15s; }
+  .toggle.on { background: var(--accent); }
+  .toggle.on::after { left: 25px; }
 </style>
 </head>
 <body>
 <div class="device"><div class="screen"><div class="native" id="native">
-  <div class="top"><span id="summary">…</span><span><span class="conn" id="conn"></span><span id="clock"></span></span></div>
+  <div class="top">
+    <span id="summary">…</span>
+    <span class="top-right">
+      <span><span class="conn" id="conn"></span><span id="clock"></span></span>
+      <button class="icon-btn" id="open-settings" data-i18n-label="settings">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+      </button>
+    </span>
+  </div>
   <div class="grid" id="grid"></div>
+  <div class="pager" id="pager" hidden>
+    <button class="arrow" id="prev" data-i18n-label="previousPage">‹</button>
+    <div class="dots" id="dots"></div>
+    <button class="arrow" id="next" data-i18n-label="nextPage">›</button>
+  </div>
+
+  <div class="panel" id="panel" hidden>
+    <div class="panel-head"><h2 data-i18n="settings"></h2><button class="icon-btn" id="close-settings" data-i18n-label="close" style="font-size:20px">×</button></div>
+    <div class="setting">
+      <div><div class="setting-label" data-i18n="cardsPerPage"></div><div class="setting-hint" data-i18n="cardsPerPageHint"></div></div>
+      <div class="seg" id="set-cards"></div>
+    </div>
+    <div class="setting">
+      <div><div class="setting-label" data-i18n="jumpToWaiting"></div><div class="setting-hint" data-i18n="jumpToWaitingHint"></div></div>
+      <button class="toggle" id="set-jump" role="switch"></button>
+    </div>
+    <div class="setting">
+      <div><div class="setting-label" data-i18n="hideDone"></div><div class="setting-hint" data-i18n="hideDoneHint"></div></div>
+      <div class="seg" id="set-hide"></div>
+    </div>
+    <div class="setting">
+      <div class="setting-label" data-i18n="language"></div>
+      <div class="seg" id="set-lang"></div>
+    </div>
+  </div>
 </div></div></div>
 
 <script>
+// All display text lives here. To add a language, add another entry with the
+// same keys (and its code to settings.Languages in the daemon).
+const STRINGS = {
+  en: {
+    languageName: "English",
+    status: { working: "Working", waiting: "Needs you", done: "Done", error: "Error", idle: "Idle" },
+    action: {
+      idle: "Waiting for a prompt", thinking: "Thinking…", edit: "Editing {arg}", read: "Reading {arg}",
+      run: "Running: {arg}", search_code: "Searching the code", search_web: "Searching the web",
+      delegate: "Delegating to a subagent", plan: "Planning steps", mcp: "Using an MCP tool", tool: "Using {arg}",
+      permission: "Asks permission: {arg}", input: "Waiting for your reply", attention: "Needs your attention", done: "Done",
+    },
+    summary: "{working} working · {waiting} waiting · {done} done",
+    newSession: "New session",
+    justNow: "just now", minutes: "{m} min", hoursMinutes: "{h} h {m} min",
+    finishedAgo: "Finished {ago} ago", finishedJustNow: "Finished just now",
+    step: "step {n}/{total}",
+    empty: "No active agents. Start a Claude Code session.",
+    settings: "Settings", close: "Close", previousPage: "Previous page", nextPage: "Next page",
+    cardsPerPage: "Agents per screen", cardsPerPageHint: "More agents go to the next pages",
+    jumpToWaiting: "Jump to agent that needs you", jumpToWaitingHint: "Switches to its page automatically",
+    hideDone: "Hide finished agents", hideDoneHint: "They come back when they start working again",
+    never: "Never", afterMinutes: "{m} min",
+    language: "Language",
+  },
+};
+
+let lang = "en";
+// t looks up a key ("action.edit") in the current language, falling back to English.
+function t(key, vars = {}) {
+  const find = dict => key.split(".").reduce((o, k) => (o && o[k] !== undefined ? o[k] : undefined), dict);
+  const s = find(STRINGS[lang]) ?? find(STRINGS.en) ?? key;
+  return s.replace(/\{(\w+)\}/g, (_, v) => vars[v] ?? "");
+}
+
+function translateStatic() {
+  document.documentElement.lang = lang;
+  document.querySelectorAll("[data-i18n]").forEach(el => { el.textContent = t(el.dataset.i18n); });
+  document.querySelectorAll("[data-i18n-label]").forEach(el => {
+    el.setAttribute("aria-label", t(el.dataset.i18nLabel));
+    el.title = t(el.dataset.i18nLabel);
+  });
+}
+
 const COLORS = ["#D85A30", "#1D9E75", "#7F77DD", "#EF9F27", "#378ADD", "#D4537E", "#97C459", "#5DCAA5"];
 const EYE = "#121211";
 // X body, O eye, - closed eye, A antenna. Two body shapes, alternating by mascot index.
@@ -84,7 +192,6 @@ const SHAPES = [
   { awake: ["A........A", ".XXXXXXXX.", "XXOOXXOOXX", "XXXXXXXXXX", "XXXXXXXXXX", "X.X....X.X"],
     sleep: ["A........A", ".XXXXXXXX.", "XX--XX--XX", "XXXXXXXXXX", "XXXXXXXXXX", "XXXXXXXXXX"] },
 ];
-const LABELS = { working: "Pracuje", waiting: "Czeka na Ciebie", done: "Gotowe", error: "Błąd", idle: "Bezczynny" };
 
 function mascotSVG(index, status) {
   const color = COLORS[index % COLORS.length];
@@ -101,38 +208,72 @@ function mascotSVG(index, status) {
   return `<svg class="mascot" width="72" height="40" viewBox="0 0 72 40" aria-hidden="true">${rects}</svg>`;
 }
 
-function ago(from, now) {
-  const m = Math.max(0, Math.floor((now - from) / 60000));
-  if (m < 1) return "przed chwilą";
-  if (m < 60) return `${m} min`;
-  return `${Math.floor(m / 60)} h ${m % 60} min`;
+function minutesSince(from, now) { return Math.max(0, Math.floor((now - from) / 60000)); }
+
+function duration(m) {
+  if (m < 1) return t("justNow");
+  if (m < 60) return t("minutes", { m });
+  return t("hoursMinutes", { h: Math.floor(m / 60), m: m % 60 });
+}
+
+function actionText(a) {
+  if (!a) return "";
+  if (a.kind === "text" || a.kind === "notice") return a.arg || ""; // written by the agent, shown as is
+  return t(`action.${a.kind}`, { arg: a.arg || "" });
+}
+
+function metaText(s, now) {
+  let meta = "";
+  if (s.status === "done") {
+    const m = minutesSince(new Date(s.finished_at), now);
+    meta = m < 1 ? t("finishedJustNow") : t("finishedAgo", { ago: duration(m) });
+  } else if (s.status !== "idle") {
+    meta = duration(minutesSince(new Date(s.turn_start), now));
+  }
+  if (s.steps && s.status !== "done") {
+    meta += ` · ${t("step", { n: Math.min(s.steps.done + 1, s.steps.total), total: s.steps.total })}`;
+  }
+  return meta;
 }
 
 function esc(s) { return String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]); }
 
-let latest = { sessions: [], now: new Date().toISOString() };
+let latest = { sessions: [], now: new Date().toISOString(), settings: { cards_per_page: 6, jump_to_waiting: true, hide_done_after_min: 0, language: "en" }, languages: ["en"] };
 let offset = 0; // server clock minus local clock
+let page = 0;
+let lastStatus = {}; // session id -> status in the previous update, to spot new waits
+let dragId = null;
+
+function pages() {
+  const size = latest.settings.cards_per_page || 6;
+  const out = [];
+  for (let i = 0; i < latest.sessions.length; i += size) out.push(latest.sessions.slice(i, i + size));
+  return out;
+}
 
 function render() {
   if (dragId) return;
   const now = Date.now() + offset;
   const grid = document.getElementById("grid");
-  const sessions = latest.sessions || [];
+  const all = latest.sessions || [];
   const counts = { working: 0, waiting: 0, done: 0 };
-  sessions.forEach(s => { if (s.status in counts) counts[s.status]++; });
-  document.getElementById("summary").textContent =
-    `${counts.working} pracuje · ${counts.waiting} czeka · ${counts.done} gotowe` +
-    (latest.hidden ? ` · +${latest.hidden} poza ekranem` : "");
+  all.forEach(s => { if (s.status in counts) counts[s.status]++; });
+  document.getElementById("summary").textContent = t("summary", counts);
   document.getElementById("clock").textContent =
-    new Date(now).toLocaleTimeString("pl-PL", { hour: "2-digit", minute: "2-digit" });
+    new Date(now).toLocaleTimeString(lang, { hour: "2-digit", minute: "2-digit" });
 
-  if (sessions.length === 0) {
+  const pageList = pages();
+  page = Math.min(page, Math.max(0, pageList.length - 1));
+  renderPager(pageList);
+
+  if (all.length === 0) {
     grid.className = "grid";
-    grid.innerHTML = `<div class="empty">${mascotSVG(0, "idle")}<span>Brak aktywnych agentów. Uruchom sesję Claude Code.</span></div>`;
+    grid.innerHTML = `<div class="empty">${mascotSVG(0, "idle")}<span>${esc(t("empty"))}</span></div>`;
     return;
   }
-  // Cards fill the screen in slot order: 1 = full screen, 2 = halves, 3 = 2+1,
+  // Cards fill the page in slot order: 1 = full screen, 2 = halves, 3 = 2+1,
   // 4 = 2+2, 5 = 3+2, 6 = 3+3. The top row gets the extra card when odd.
+  const sessions = pageList[page];
   const n = sessions.length;
   const rows = n <= 2 ? 1 : 2;
   const top = Math.ceil(n / rows);
@@ -140,24 +281,100 @@ function render() {
   let html = "";
   sessions.forEach((s, i) => {
     const span = 6 / (i < top ? top : n - top);
-    let meta = "";
-    if (s.status === "done") meta = `Skończył ${ago(new Date(s.finished_at), now)} temu`.replace("przed chwilą temu", "przed chwilą");
-    else if (s.status !== "idle") meta = ago(new Date(s.turn_start), now);
-    if (s.steps && s.status !== "done") meta += ` · krok ${Math.min(s.steps.done + 1, s.steps.total)}/${s.steps.total}`;
     html += `<div class="card ${s.status}" style="grid-column: span ${span}" title="${esc(s.cwd)}" draggable="true" data-id="${esc(s.id)}" data-slot="${s.slot}">
-      <div class="head">${mascotSVG(s.mascot, s.status)}<span class="badge">${LABELS[s.status] || s.status}</span></div>
+      <div class="head">${mascotSVG(s.mascot, s.status)}<span class="badge">${esc(t(`status.${s.status}`))}</span></div>
       <p class="name">${esc(s.project)}</p>
-      <p class="line title">${esc(s.title || "Nowa sesja")}</p>
-      <p class="line action">${esc(s.action)}</p>
-      <p class="line">${esc(meta)}</p>
+      <p class="line title">${esc(s.title || t("newSession"))}</p>
+      <p class="line action">${esc(actionText(s.action))}</p>
+      <p class="line">${esc(metaText(s, now))}</p>
     </div>`;
   });
   grid.innerHTML = html;
 }
 
-// Drag a card onto another slot to rearrange; the daemon remembers it per project.
+function renderPager(pageList) {
+  const pager = document.getElementById("pager");
+  pager.hidden = pageList.length <= 1;
+  document.getElementById("prev").disabled = page === 0;
+  document.getElementById("next").disabled = page >= pageList.length - 1;
+  document.getElementById("dots").innerHTML = pageList.map((p, i) => {
+    const alert = p.some(s => s.status === "waiting");
+    return `<span class="dot${i === page ? " current" : ""}${alert ? " alert" : ""}"></span>`;
+  }).join("");
+}
+
+function goToPage(p) {
+  const count = pages().length;
+  page = Math.max(0, Math.min(p, count - 1));
+  render();
+}
+
+// When an agent starts waiting for the user on another page, show that page.
+function jumpToNewWait() {
+  if (!latest.settings.jump_to_waiting) return;
+  const pageList = pages();
+  for (let p = 0; p < pageList.length; p++) {
+    if (pageList[p].some(s => s.status === "waiting" && lastStatus[s.id] !== "waiting")) {
+      page = p;
+      return;
+    }
+  }
+}
+
+function onState(data) {
+  latest = data;
+  offset = new Date(latest.now).getTime() - Date.now();
+  if (latest.settings.language !== lang && STRINGS[latest.settings.language]) {
+    lang = latest.settings.language;
+    translateStatic();
+  }
+  jumpToNewWait();
+  lastStatus = Object.fromEntries(latest.sessions.map(s => [s.id, s.status]));
+  render();
+  renderSettings();
+}
+
+// --- settings panel ---
+
+function saveSettings(change) {
+  latest.settings = { ...latest.settings, ...change };
+  renderSettings();
+  render();
+  fetch("/api/settings", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(change) });
+}
+
+function segment(id, options, current, onPick) {
+  const el = document.getElementById(id);
+  el.innerHTML = options.map(o => `<button data-v="${o.value}" class="${o.value === current ? "on" : ""}">${esc(o.label)}</button>`).join("");
+  el.onclick = e => {
+    const b = e.target.closest("button");
+    if (b) onPick(b.dataset.v);
+  };
+}
+
+function renderSettings() {
+  const s = latest.settings;
+  segment("set-cards", [1, 2, 3, 4, 5, 6].map(n => ({ value: String(n), label: String(n) })), String(s.cards_per_page),
+    v => saveSettings({ cards_per_page: Number(v) }));
+  segment("set-hide", [0, 5, 15, 60].map(m => ({ value: String(m), label: m ? t("afterMinutes", { m }) : t("never") })),
+    String(s.hide_done_after_min), v => saveSettings({ hide_done_after_min: Number(v) }));
+  segment("set-lang", (latest.languages || ["en"]).filter(l => STRINGS[l]).map(l => ({ value: l, label: STRINGS[l].languageName })),
+    s.language, v => saveSettings({ language: v }));
+  const jump = document.getElementById("set-jump");
+  jump.classList.toggle("on", !!s.jump_to_waiting);
+  jump.setAttribute("aria-checked", String(!!s.jump_to_waiting));
+}
+
+document.getElementById("set-jump").onclick = () => saveSettings({ jump_to_waiting: !latest.settings.jump_to_waiting });
+document.getElementById("open-settings").onclick = () => { document.getElementById("panel").hidden = false; };
+document.getElementById("close-settings").onclick = () => { document.getElementById("panel").hidden = true; };
+document.getElementById("prev").onclick = () => goToPage(page - 1);
+document.getElementById("next").onclick = () => goToPage(page + 1);
+
+// --- rearranging and swiping ---
+
+// Drag a card onto another to swap them; the daemon remembers it per project.
 // Re-rendering is paused while dragging so live updates don't cancel the drag.
-let dragId = null;
 const grid = document.getElementById("grid");
 grid.addEventListener("dragstart", e => {
   const card = e.target.closest(".card");
@@ -182,6 +399,16 @@ grid.addEventListener("drop", e => {
 });
 grid.addEventListener("dragend", () => { dragId = null; render(); });
 
+// Swipe left/right with a finger to change pages, like on the device.
+let swipeX = null;
+grid.addEventListener("pointerdown", e => { if (e.pointerType === "touch") swipeX = e.clientX; });
+grid.addEventListener("pointerup", e => {
+  if (swipeX === null) return;
+  const dx = e.clientX - swipeX;
+  swipeX = null;
+  if (Math.abs(dx) > 50) goToPage(page + (dx < 0 ? 1 : -1));
+});
+
 function fit() {
   const screen = document.querySelector(".screen");
   document.getElementById("native").style.transform = `scale(${screen.clientWidth / 800})`;
@@ -191,17 +418,15 @@ function connect() {
   const es = new EventSource("/api/stream");
   const conn = document.getElementById("conn");
   es.onopen = () => conn.classList.add("on");
-  es.onmessage = e => {
-    latest = JSON.parse(e.data);
-    offset = new Date(latest.now).getTime() - Date.now();
-    render();
-  };
+  es.onmessage = e => onState(JSON.parse(e.data));
   es.onerror = () => conn.classList.remove("on"); // EventSource reconnects on its own
 }
 
 window.addEventListener("resize", fit);
 fit();
+translateStatic();
 render();
+renderSettings();
 connect();
 setInterval(render, 15000);
 </script>
