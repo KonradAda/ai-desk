@@ -4,6 +4,8 @@ Fizyczny hub na biurko do pilnowania agentów AI (na start: Claude Code). Mały 
 
 Cel biznesowy: gotowe urządzenie „wyjmij z pudełka, podłącz, działa”, a nie zestaw DIY. Projekt poboczny z ambicją na małą firmę. Najpierw prototyp dla siebie, potem walidacja rynku (filmik, lista oczekujących), dopiero potem mała seria.
 
+**Zacznij od [docs/stan-projektu.md](docs/stan-projektu.md):** co już działa, podjęte decyzje, pułapki, znane ograniczenia i kolejne kroki. Aktualizuj ten plik po każdym większym etapie.
+
 ## Architektura
 
 ```
@@ -57,10 +59,10 @@ JSON rozdzielany znakiem nowej linii (NDJSON) po USB CDC. Daemon wysyła pełny 
 
 ## Roadmapa
 
-1. Daemon i hooki, stan sesji widoczny w terminalu i w symulatorze w przeglądarce.
-2. Używanie na co dzień przez 2–3 tygodnie, poprawki UI.
+1. ✅ Daemon i hooki, stan sesji widoczny w symulatorze w przeglądarce.
+2. ⏳ Używanie na co dzień przez 2–3 tygodnie, poprawki UI (w toku; brakuje autostartu daemona i kliknięcia w kartę).
 3. Firmware na ESP32-S3 7″, połączenie po USB.
-4. Własne stworki i animacje (pracuje, czeka, śpi, błąd).
+4. ⏳ Własne stworki i animacje (są: 4 kształty, praca, czekanie, sen, budzenie, zasypianie; dalej: animacje per rodzaj akcji, wersja pod ESP32).
 5. Obudowa (druk 3D), filmik, lista oczekujących.
 6. Mała seria w przedsprzedaży, wtedy CE i formalności firmowe.
 
