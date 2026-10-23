@@ -18,6 +18,7 @@ func TestDefaultsAreValid(t *testing.T) {
 func TestValidateRejectsBadValues(t *testing.T) {
 	for name, mut := range map[string]func(*Settings){
 		"language":   func(s *Settings) { s.Language = "xx" },
+		"mode":       func(s *Settings) { s.SessionMode = "sometimes" },
 		"cards low":  func(s *Settings) { s.CardsPerPage = 0 },
 		"cards high": func(s *Settings) { s.CardsPerPage = 7 },
 		"hide":       func(s *Settings) { s.HideDoneAfterMin = -1 },
@@ -36,6 +37,7 @@ func TestSaveAndLoad(t *testing.T) {
 	want := Defaults()
 	want.CardsPerPage = 4
 	want.HideDoneAfterMin = 15
+	want.SessionMode = "manual"
 	if err := st.Set(want); err != nil {
 		t.Fatal(err)
 	}

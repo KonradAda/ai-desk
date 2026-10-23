@@ -16,6 +16,10 @@ import (
 // Languages the display has translations for. The first one is the default.
 var Languages = []string{"en"}
 
+// Session modes: "auto" shows every agent as soon as it starts, "manual" only
+// the ones the user picked. The first is the default.
+var SessionModes = []string{"auto", "manual"}
+
 type Settings struct {
 	Language string `json:"language"`
 	// CardsPerPage is how many agents one screen shows; more agents go to further pages.
@@ -24,15 +28,20 @@ type Settings struct {
 	JumpToWaiting bool `json:"jump_to_waiting"`
 	// HideDoneAfterMin hides finished agents after this many minutes (0 = never).
 	HideDoneAfterMin int `json:"hide_done_after_min"`
+	// SessionMode is how agents get on the screen, see SessionModes.
+	SessionMode string `json:"session_mode"`
 }
 
 func Defaults() Settings {
-	return Settings{Language: Languages[0], CardsPerPage: 6, JumpToWaiting: true}
+	return Settings{Language: Languages[0], CardsPerPage: 6, JumpToWaiting: true, SessionMode: SessionModes[0]}
 }
 
 func (s Settings) Validate() error {
 	if !slices.Contains(Languages, s.Language) {
 		return fmt.Errorf("unsupported language %q", s.Language)
+	}
+	if !slices.Contains(SessionModes, s.SessionMode) {
+		return fmt.Errorf("unsupported session_mode %q", s.SessionMode)
 	}
 	if s.CardsPerPage < 1 || s.CardsPerPage > 6 {
 		return fmt.Errorf("cards_per_page must be 1-6, got %d", s.CardsPerPage)

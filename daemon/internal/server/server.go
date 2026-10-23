@@ -50,7 +50,25 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/move", s.handleMove)
 	mux.HandleFunc("GET /api/settings", s.handleGetSettings)
 	mux.HandleFunc("PUT /api/settings", s.handlePutSettings)
+	mux.HandleFunc("POST /api/pin", s.handlePin)
 	return mux
+}
+
+// handlePin puts a session on the screen or takes it off (manual mode).
+func (s *Server) handlePin(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		ID     string `json:"id"`
+		Pinned bool   `json:"pinned"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	if !s.store.Pin(req.ID, req.Pinned) {
+		http.Error(w, "unknown session", http.StatusNotFound)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
@@ -59,7 +77,8 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
-	next := s.settings.Get() // fields left out of the request keep their value
+	prev := s.settings.Get()
+	next := prev // fields left out of the request keep their value
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&next); err != nil {
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
@@ -67,6 +86,9 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 	if err := s.settings.Set(next); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
+	}
+	if prev.SessionMode != "manual" && next.SessionMode == "manual" {
+		s.store.PinAll() // keep what's on screen when switching to manual
 	}
 	s.notify()
 	w.WriteHeader(http.StatusNoContent)

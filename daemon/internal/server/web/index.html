@@ -122,6 +122,20 @@
   .toggle::after { content: ""; position: absolute; top: 3px; left: 3px; width: 24px; height: 24px; border-radius: 50%; background: var(--text); transition: left .15s; }
   .toggle.on { background: var(--accent); }
   .toggle.on::after { left: 25px; }
+
+  /* Manual mode: "+" opens a list of agents that aren't on screen; "×" on a card takes it off. */
+  .add-btn { position: relative; font-size: 20px; line-height: 1; }
+  .add-btn[hidden], .alert-dot[hidden] { display: none; }
+  .alert-dot { position: absolute; top: 1px; right: 1px; width: 7px; height: 7px; border-radius: 50%; background: var(--waiting-border); }
+  .head-right { display: flex; align-items: center; gap: 4px; }
+  .remove { width: 22px; height: 22px; border-radius: 6px; color: var(--muted); font-size: 16px; line-height: 1; }
+  .remove:hover { background: var(--card-border); color: var(--text); }
+  .pick-list { display: flex; flex-direction: column; gap: 8px; overflow-y: auto; min-height: 0; }
+  .pick { display: flex; align-items: center; gap: 12px; width: 100%; padding: 8px 12px; border-radius: 10px; background: var(--card); text-align: left; }
+  .pick:hover { background: var(--card-border); }
+  .pick svg.mascot { width: 36px; height: 28px; }
+  .pick-text { flex: 1; min-width: 0; }
+  .pick-empty { color: var(--muted); font-size: 14px; padding: 8px 0; }
 </style>
 <link rel="stylesheet" href="mascot.css">
 </head>
@@ -131,6 +145,7 @@
     <span id="summary">…</span>
     <span class="top-right">
       <span><span class="conn" id="conn"></span><span id="clock"></span></span>
+      <button class="icon-btn add-btn" id="open-picker" data-i18n-label="addAgent" hidden>+<span class="alert-dot" id="hidden-alert" hidden></span></button>
       <button class="icon-btn" id="open-settings" data-i18n-label="settings">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
       </button>
@@ -145,6 +160,10 @@
 
   <div class="panel" id="panel" hidden>
     <div class="panel-head"><h2 data-i18n="settings"></h2><button class="icon-btn" id="close-settings" data-i18n-label="close" style="font-size:20px">×</button></div>
+    <div class="setting">
+      <div><div class="setting-label" data-i18n="sessionMode"></div><div class="setting-hint" data-i18n="sessionModeHint"></div></div>
+      <div class="seg" id="set-mode"></div>
+    </div>
     <div class="setting">
       <div><div class="setting-label" data-i18n="cardsPerPage"></div><div class="setting-hint" data-i18n="cardsPerPageHint"></div></div>
       <div class="seg" id="set-cards"></div>
@@ -161,6 +180,11 @@
       <div class="setting-label" data-i18n="language"></div>
       <div class="seg" id="set-lang"></div>
     </div>
+  </div>
+
+  <div class="panel" id="picker" hidden>
+    <div class="panel-head"><h2 data-i18n="addAgent"></h2><button class="icon-btn" id="close-picker" data-i18n-label="close" style="font-size:20px">×</button></div>
+    <div class="pick-list" id="pick-list"></div>
   </div>
 </div></div></div>
 
@@ -189,6 +213,11 @@ const STRINGS = {
     finishedAgo: "Finished {ago} ago", finishedJustNow: "Finished just now",
     step: "Step {n}/{total}",
     empty: "No active agents. Start a Claude Code session.",
+    emptyManual: "No agents on the screen. Tap + to add one.",
+    addAgent: "Add an agent", removeAgent: "Take off the screen",
+    allOnScreen: "Every active agent is already on the screen.",
+    sessionMode: "Agents on the screen", sessionModeHint: "Automatic shows every agent, manual only the ones you add",
+    modes: { auto: "Automatic", manual: "Manual" },
     settings: "Settings", close: "Close", previousPage: "Previous page", nextPage: "Next page",
     cardsPerPage: "Agents per screen", cardsPerPageHint: "More agents go to the next pages",
     jumpToWaiting: "Jump to agent that needs you", jumpToWaitingHint: "Switches to its page automatically",
@@ -287,7 +316,7 @@ function progress(s, now) {
 
 function esc(s) { return String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]); }
 
-let latest = { sessions: [], now: new Date().toISOString(), settings: { cards_per_page: 6, jump_to_waiting: true, hide_done_after_min: 0, language: "en" }, languages: ["en"] };
+let latest = { sessions: [], now: new Date().toISOString(), settings: { cards_per_page: 6, jump_to_waiting: true, hide_done_after_min: 0, language: "en", session_mode: "auto" }, languages: ["en"] };
 let offset = 0; // server clock minus local clock
 let page = 0;
 let lastStatus = {}; // session id -> status in the previous update, to spot new waits
@@ -334,10 +363,17 @@ function groupOrder(sessions) {
   return [...sessions].sort((a, b) => first[a.project] - first[b.project] || a.slot - b.slot);
 }
 
+// onScreen is the agents the screen shows: all of them, or in manual mode
+// only the ones the user added.
+function onScreen() {
+  const all = latest.sessions || [];
+  return latest.settings.session_mode === "manual" ? all.filter(s => s.pinned) : all;
+}
+
 function pages() {
   const size = latest.settings.cards_per_page || 6;
   const out = [];
-  const ordered = groupOrder(latest.sessions || []);
+  const ordered = groupOrder(onScreen());
   for (let i = 0; i < ordered.length; i += size) out.push(ordered.slice(i, i + size));
   return out;
 }
@@ -346,7 +382,7 @@ function render() {
   if (dragId) return;
   const now = Date.now() + offset;
   const grid = document.getElementById("grid");
-  const all = latest.sessions || [];
+  const all = onScreen();
   const counts = { working: 0, waiting: 0, done: 0 };
   all.forEach(s => { if (s.status in counts) counts[s.status]++; });
   document.getElementById("summary").textContent = t("summary", counts);
@@ -357,9 +393,12 @@ function render() {
   page = Math.min(page, Math.max(0, pageList.length - 1));
   renderPager(pageList);
 
+  renderAddButton();
+  renderPicker();
   if (all.length === 0) {
+    const manual = latest.settings.session_mode === "manual" && (latest.sessions || []).length > 0;
     grid.className = "grid";
-    grid.innerHTML = `<div class="empty">${mascotSVG(0, "idle")}<span>${esc(t("empty"))}</span></div>`;
+    grid.innerHTML = `<div class="empty">${mascotSVG(0, "idle")}<span>${esc(t(manual ? "emptyManual" : "empty"))}</span></div>`;
     return;
   }
   // Cards fill the page in group order: 1 = full screen, 2 = halves, 3 or more
@@ -398,7 +437,7 @@ function render() {
 function cardHTML(s, now, span, color) {
   const style = [span && `grid-column: span ${span}`, color && `--group: ${color}`].filter(Boolean).join("; ");
   return `<div class="card ${s.status}${color ? " tinted" : ""}"${style ? ` style="${style}"` : ""} title="${esc(s.cwd)}" draggable="true" data-id="${esc(s.id)}" data-slot="${s.slot}">
-      <div class="head">${mascotSVG(s.mascot, s.status, changed[s.id] && { kind: changed[s.id].kind, ago: Date.now() - changed[s.id].at })}<span class="badge">${esc(t(`status.${s.status}`))}</span></div>
+      <div class="head">${mascotSVG(s.mascot, s.status, changed[s.id] && { kind: changed[s.id].kind, ago: Date.now() - changed[s.id].at })}<span class="head-right"><span class="badge">${esc(t(`status.${s.status}`))}</span>${latest.settings.session_mode === "manual" ? `<button class="remove" data-remove="${esc(s.id)}" aria-label="${esc(t("removeAgent"))}" title="${esc(t("removeAgent"))}">×</button>` : ""}</span></div>
       <p class="name"><span>${esc(s.project)}</span></p>
       <p class="line agent" title="${esc(s.client && t(`client.${s.client}`) !== `client.${s.client}` ? t("runsIn", { client: t(`client.${s.client}`) }) : "")}">${esc(agentLine(s))}</p>
       <p class="line title">${esc(s.title || t("newSession"))}</p>
@@ -485,12 +524,53 @@ function segment(id, options, current, onPick) {
   };
 }
 
+// --- manual mode: adding and removing agents ---
+
+function pin(id, pinned) {
+  const s = (latest.sessions || []).find(x => x.id === id);
+  if (s) s.pinned = pinned; // show it right away; the daemon confirms with the next update
+  render();
+  fetch("/api/pin", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, pinned }) });
+}
+
+// renderAddButton shows "+" in manual mode, with an orange dot when an agent
+// that isn't on screen is waiting for the user.
+function renderAddButton() {
+  const manual = latest.settings.session_mode === "manual";
+  document.getElementById("open-picker").hidden = !manual;
+  const off = (latest.sessions || []).filter(s => !s.pinned);
+  document.getElementById("hidden-alert").hidden = !(manual && off.some(s => s.status === "waiting"));
+}
+
+function renderPicker() {
+  const off = (latest.sessions || []).filter(s => !s.pinned);
+  document.getElementById("pick-list").innerHTML = off.length === 0
+    ? `<div class="pick-empty">${esc(t("allOnScreen"))}</div>`
+    : off.map(s => `<button class="pick ${s.status}" data-pick="${esc(s.id)}">
+        ${mascotSVG(s.mascot, s.status)}
+        <span class="pick-text"><p class="name">${esc(s.project)}</p><p class="line title">${esc(s.title || t("newSession"))}</p></span>
+        <span class="badge">${esc(t(`status.${s.status}`))}</span>
+      </button>`).join("");
+}
+
+document.getElementById("open-picker").onclick = () => { document.getElementById("picker").hidden = false; };
+document.getElementById("close-picker").onclick = () => { document.getElementById("picker").hidden = true; };
+document.getElementById("pick-list").addEventListener("click", e => {
+  const b = e.target.closest("[data-pick]");
+  if (b) pin(b.dataset.pick, true);
+});
+
 function renderSettings() {
   const s = latest.settings;
   segment("set-cards", [1, 2, 3, 4, 5, 6].map(n => ({ value: String(n), label: String(n) })), String(s.cards_per_page),
     v => saveSettings({ cards_per_page: Number(v) }));
   segment("set-hide", [0, 5, 15, 60].map(m => ({ value: String(m), label: m ? t("afterMinutes", { m }) : t("never") })),
     String(s.hide_done_after_min), v => saveSettings({ hide_done_after_min: Number(v) }));
+  segment("set-mode", ["auto", "manual"].map(m => ({ value: m, label: t(`modes.${m}`) })), s.session_mode, v => {
+    // The daemon keeps what's on screen when switching to manual; mirror it so the screen doesn't flash empty.
+    if (v === "manual" && s.session_mode !== "manual") (latest.sessions || []).forEach(x => { x.pinned = true; });
+    saveSettings({ session_mode: v });
+  });
   segment("set-lang", (latest.languages || ["en"]).filter(l => STRINGS[l]).map(l => ({ value: l, label: STRINGS[l].languageName })),
     s.language, v => saveSettings({ language: v }));
   const jump = document.getElementById("set-jump");
@@ -509,6 +589,10 @@ document.getElementById("next").onclick = () => goToPage(page + 1);
 // Drag a card onto another to swap them; the daemon remembers it per project.
 // Re-rendering is paused while dragging so live updates don't cancel the drag.
 const grid = document.getElementById("grid");
+grid.addEventListener("click", e => {
+  const b = e.target.closest("[data-remove]");
+  if (b) pin(b.dataset.remove, false);
+});
 grid.addEventListener("dragstart", e => {
   const card = e.target.closest(".card");
   if (!card) return;

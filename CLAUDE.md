@@ -83,7 +83,9 @@ while IFS= read -r l; do printf '%s' "$l" | ./aidesk.exe hook; done < testdata/d
 
 Liczba agentów nie jest ograniczona: daemon wysyła wszystkie sesje uporządkowane według slotu, a ekran dzieli je na strony (ustawienie „agentów na ekran”, 1–6). Karty mają stałe miejsca w tej kolejności: agent nie zmienia pozycji, dopóki trwa sesja. Przeciągnięcie karty w symulatorze zapisuje miejsce projektu w `%APPDATA%\aidesk\layout.json` (na Linuksie i macOS w katalogu konfiguracji użytkownika), więc kolejne sesje tego projektu wracają na to samo miejsce. Nazwa projektu to katalog główny repozytorium git (albo katalog roboczy, gdy nie ma gita).
 
-Ustawienia (`settings.json` obok `layout.json`, API `GET/PUT /api/settings`, wysyłane też w strumieniu stanu): język, agentów na ekran, przeskakiwanie do strony agenta, który czeka, ukrywanie skończonych po X minutach. Nowe ustawienie dodajesz w `internal/settings` (pole, domyślna wartość, walidacja) i w panelu w `web/index.html`.
+Ustawienia (`settings.json` obok `layout.json`, API `GET/PUT /api/settings`, wysyłane też w strumieniu stanu): tryb wyboru agentów (automatyczny/ręczny), język, agentów na ekran, przeskakiwanie do strony agenta, który czeka, ukrywanie skończonych po X minutach.
+
+Tryb ręczny: nowe sesje nie trafiają na ekran same. Użytkownik dodaje je przez „+” i zdejmuje przez „×” na karcie (`POST /api/pin`, pole `pinned` sesji). Przy przełączeniu na tryb ręczny daemon przypina wszystko, co było na ekranie. Przypięcia żyją w pamięci daemona, razem z sesjami. Nowe ustawienie dodajesz w `internal/settings` (pole, domyślna wartość, walidacja) i w panelu w `web/index.html`.
 
 Zmienne środowiskowe: `AIDESK_ADDR` (domyślnie `127.0.0.1:7777`), `AIDESK_DEBUG=1` (hook wypisuje błędy na stderr zamiast milczeć), `AIDESK_CONFIG_DIR` (inny katalog na ustawienia i układ, np. dla testowego daemona na innym porcie, żeby nie ruszać prawdziwych).
 

@@ -96,6 +96,9 @@ type Session struct {
 	infoCheckedAt time.Time
 	// Slot is the card's fixed position in the order of cards (0..MaxSlots-1).
 	Slot int `json:"slot"`
+	// Pinned marks sessions the user picked for the screen. It only matters in
+	// manual mode, where unpinned sessions stay off the screen.
+	Pinned bool `json:"pinned"`
 }
 
 // Event is the subset of the Claude Code hook payload we use.
@@ -246,6 +249,33 @@ func (s *Store) Snapshot(hideDoneAfter time.Duration) []Session {
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Slot < out[j].Slot })
 	return out
+}
+
+// Pin puts a session on the screen (pinned) or takes it off, for manual mode.
+func (s *Store) Pin(id string, pinned bool) bool {
+	s.mu.Lock()
+	sess, ok := s.sessions[id]
+	if ok {
+		sess.Pinned = pinned
+	}
+	s.mu.Unlock()
+	if ok && s.onChange != nil {
+		s.onChange()
+	}
+	return ok
+}
+
+// PinAll pins every current session, so switching to manual mode keeps the
+// screen as it was instead of emptying it.
+func (s *Store) PinAll() {
+	s.mu.Lock()
+	for _, sess := range s.sessions {
+		sess.Pinned = true
+	}
+	s.mu.Unlock()
+	if s.onChange != nil {
+		s.onChange()
+	}
 }
 
 // Move puts a session into the given slot, swapping with whatever card is there,
