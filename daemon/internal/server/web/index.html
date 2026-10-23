@@ -37,6 +37,9 @@
   .card { background: var(--card); border: 1px solid var(--card-border); border-radius: 12px; padding: 12px;
           display: flex; flex-direction: column; gap: 6px; min-width: 0; min-height: 0; overflow: hidden; }
   .card.waiting { border: 2px solid var(--waiting-border); }
+  /* Agents working in the same project share a color: a strip on the left and a light tint. */
+  .card.grouped { box-shadow: inset 5px 0 0 var(--group); background: color-mix(in srgb, var(--group) 9%, var(--card)); padding-left: 17px; }
+  .size-l .card.grouped, .size-m .card.grouped { box-shadow: inset 7px 0 0 var(--group); }
   .head { display: flex; justify-content: space-between; align-items: flex-start; height: 48px; }
   .badge { font-size: 12px; padding: 3px 10px; border-radius: 6px; white-space: nowrap; }
   .working .badge { background: var(--working-bg); color: var(--working-fg); }
@@ -309,6 +312,22 @@ let page = 0;
 let lastStatus = {}; // session id -> status in the previous update, to spot new waits
 let dragId = null;
 
+// Group colors keep clear of the status colors (blue working, orange waiting, green done).
+const GROUP_COLORS = ["#7F77DD", "#D4537E", "#5DCAA5", "#E24B4A", "#BA7517", "#888780"];
+
+// groupColors gives every project with two or more agents its own color,
+// in card order, so groups on one screen never share a color.
+function groupColors(sessions) {
+  const count = {};
+  sessions.forEach(s => { count[s.project] = (count[s.project] || 0) + 1; });
+  const colors = {};
+  let next = 0;
+  sessions.forEach(s => {
+    if (count[s.project] > 1 && !(s.project in colors)) colors[s.project] = GROUP_COLORS[next++ % GROUP_COLORS.length];
+  });
+  return colors;
+}
+
 function pages() {
   const size = latest.settings.cards_per_page || 6;
   const out = [];
@@ -343,10 +362,12 @@ function render() {
   const rows = n <= 2 ? 1 : 2;
   const top = Math.ceil(n / rows);
   grid.className = `grid rows-${rows} ${n === 1 ? "size-l" : n === 2 ? "size-m" : ""}`;
+  const groups = groupColors(all);
   let html = "";
   sessions.forEach((s, i) => {
     const span = 6 / (i < top ? top : n - top);
-    html += `<div class="card ${s.status}" style="grid-column: span ${span}" title="${esc(s.cwd)}" draggable="true" data-id="${esc(s.id)}" data-slot="${s.slot}">
+    const group = groups[s.project];
+    html += `<div class="card ${s.status}${group ? " grouped" : ""}" style="grid-column: span ${span}${group ? `; --group: ${group}` : ""}" title="${esc(s.cwd)}" draggable="true" data-id="${esc(s.id)}" data-slot="${s.slot}">
       <div class="head">${mascotSVG(s.mascot, s.status)}<span class="badge">${esc(t(`status.${s.status}`))}</span></div>
       <p class="name">${esc(s.project)}</p>
       <p class="line agent" title="${esc(s.client && t(`client.${s.client}`) !== `client.${s.client}` ? t("runsIn", { client: t(`client.${s.client}`) }) : "")}">${esc(agentLine(s))}</p>
