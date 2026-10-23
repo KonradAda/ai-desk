@@ -14,10 +14,10 @@ const SHAPES = [
     sleep: ["A........A", ".XXXXXXXX.", "XX--XX--XX", "XXXXXXXXXX", "XXXXXXXXXX", "XXXXXXXXXX"] },
   { // ghost with a wavy hem
     awake: ["..XXXXXX..", ".XXXXXXXX.", ".XOXXXXOX.", ".XXXXXXXX.", ".XXXXXXXX.", ".X.XX.XX.X"],
-    sleep: ["..XXXXXX..", ".XXXXXXXX.", ".X-XXXX-X.", ".XXXXXXXX.", ".XXXXXXXX.", ".X.XX.XX.X"] },
+    sleep: ["..XXXXXX..", ".XXXXXXXX.", ".--XXXX--.", ".XXXXXXXX.", ".XXXXXXXX.", ".X.XX.XX.X"] },
   { // slime with a drop on top
     awake: ["....XX....", "..XXXXXX..", ".XXOXXOXX.", "XXXXXXXXXX", "XXXXXXXXXX", ".XXXXXXXX."],
-    sleep: ["....XX....", "..XXXXXX..", ".XX-XX-XX.", "XXXXXXXXXX", "XXXXXXXXXX", ".XXXXXXXX."] },
+    sleep: ["....XX....", "..XXXXXX..", ".X--XX--X.", "XXXXXXXXXX", "XXXXXXXXXX", ".XXXXXXXX."] },
 ];
 
 // The mascot wears a wizard hat and holds a wand. The canvas is 13x10 cells:
@@ -50,7 +50,8 @@ function mascotSVG(index, status) {
     const py = bodyTop + y;
     if ((ch === "X" || ch === "A") && py >= hatTop + HAT.length) body += cell(x, py, color);
     else if (ch === "O") body += cell(x, py, EYE);
-    else if (ch === "-") body += `<rect x="${x*u}" y="${py*u+u/2}" width="${u}" height="${u/2}" fill="${EYE}"/>`;
+    // A closed eye is a thin lid line on the body color, so it doesn't read as an open eye.
+    else if (ch === "-") body += cell(x, py, color) + `<rect x="${x*u}" y="${py*u+u/2}" width="${u}" height="${u/3}" fill="${EYE}"/>`;
   }));
   // The purple mascot would blend into the purple hat, so it gets a burgundy one.
   const hat = { ...MAGIC, H: color === "#7F77DD" ? "#993556" : MAGIC.H };
