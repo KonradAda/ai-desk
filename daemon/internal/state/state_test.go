@@ -384,11 +384,14 @@ func TestDesktopPlanUpdates(t *testing.T) {
 	}
 }
 
-func TestUnfinishedPlanSurvivesNewPrompt(t *testing.T) {
+func TestNewPromptClearsUnfinishedPlan(t *testing.T) {
+	// The desktop app checks off the last step itself when the turn ends,
+	// so the daemon still sees it in progress when the next prompt arrives.
 	s, _ := newTestStore()
 	s.Apply(planEvent("a", `{"items":[{"content":"A","status":"completed"},{"content":"B","status":"in_progress"}]}`))
+	s.Apply(Event{SessionID: "a", HookEventName: "Stop"})
 	s.Apply(Event{SessionID: "a", HookEventName: "UserPromptSubmit"})
-	if st := snapshot(s)[0].Steps; st == nil || st.Done != 1 {
-		t.Fatalf("unfinished plan should stay: %+v", st)
+	if st := snapshot(s)[0].Steps; st != nil {
+		t.Fatalf("new prompt should start without the old plan: %+v", st)
 	}
 }

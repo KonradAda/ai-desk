@@ -120,9 +120,3 @@ func (sess *Session) updateSteps(now time.Time) {
 	}
 	sess.Steps = &st
 }
-
-// planFinished reports whether every step of the plan is completed, so a new
-// prompt starts without the old plan.
-func (sess *Session) planFinished() bool {
-	return sess.Steps != nil && sess.Steps.Done == sess.Steps.Total
-}

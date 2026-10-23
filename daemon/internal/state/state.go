@@ -199,10 +199,12 @@ func (s *Store) apply(ev Event) {
 		sess.Action = Action{Kind: ActThinking}
 		sess.TurnStart = now
 		sess.FinishedAt = time.Time{}
-		if sess.planFinished() {
-			sess.plan = nil // a new task starts without the previous plan
-			sess.updateSteps(now)
-		}
+		// Every prompt starts without the previous plan. The desktop app checks
+		// the list off itself when a turn ends, without a tool call we could see,
+		// so an old plan would otherwise linger as unfinished. An agent that
+		// continues its plan sends the list again.
+		sess.plan = nil
+		sess.updateSteps(now)
 		if sess.Title == "" {
 			sess.Title = truncate(ev.Prompt, 40)
 		}
