@@ -33,9 +33,13 @@ const MaxSlots = 60
 // (e.g. the terminal was closed without a SessionEnd event).
 const staleAfter = 3 * time.Hour
 
+// Steps summarizes the agent's task list for the progress bar.
 type Steps struct {
-	Done  int `json:"done"`
-	Total int `json:"total"`
+	Done    int    `json:"done"`
+	Total   int    `json:"total"`
+	Current string `json:"current,omitempty"` // the step in progress
+	// Since is when the agent reached the current step.
+	Since time.Time `json:"since"`
 }
 
 // Action says what an agent is doing as a language-neutral code, so the
@@ -77,7 +81,8 @@ type Session struct {
 	FinishedAt time.Time `json:"finished_at,omitzero"`
 	UpdatedAt  time.Time `json:"updated_at"`
 	Steps      *Steps    `json:"steps,omitempty"`
-	Mascot     int       `json:"mascot"`
+	plan       []planItem
+	Mascot     int `json:"mascot"`
 	// Title tells sessions of one project apart: the session title from the
 	// transcript, or the start of the first prompt until a title exists.
 	Title          string `json:"title"`
@@ -176,14 +181,18 @@ func (s *Store) apply(ev Event) {
 		sess.Action = Action{Kind: ActThinking}
 		sess.TurnStart = now
 		sess.FinishedAt = time.Time{}
+		if sess.planFinished() {
+			sess.plan = nil // a new task starts without the previous plan
+			sess.updateSteps(now)
+		}
 		if sess.Title == "" {
 			sess.Title = truncate(ev.Prompt, 40)
 		}
 	case "PreToolUse":
 		sess.Status = StatusWorking
 		sess.Action = describeTool(ev.ToolName, ev.ToolInput)
-		if ev.ToolName == "TodoWrite" {
-			sess.Steps = todoSteps(ev.ToolInput)
+		if planTool(ev.ToolName) {
+			sess.applyPlan(ev.ToolName, ev.ToolInput, now)
 		}
 	case "PostToolUse":
 		// A tool finished, so any pending permission prompt was answered.
@@ -336,7 +345,8 @@ func describeTool(name string, raw json.RawMessage) Action {
 		return Action{Kind: ActSearchWeb}
 	case "Task", "Agent":
 		return Action{Kind: ActDelegate}
-	case "TodoWrite":
+	}
+	if planTool(name) {
 		return Action{Kind: ActPlan}
 	}
 	if strings.HasPrefix(name, "mcp__") {
@@ -357,24 +367,6 @@ func describeNotification(msg string) Action {
 		return Action{Kind: ActAttention}
 	}
 	return Action{Kind: ActNotice, Arg: truncate(msg, 40)}
-}
-
-func todoSteps(raw json.RawMessage) *Steps {
-	var in struct {
-		Todos []struct {
-			Status string `json:"status"`
-		} `json:"todos"`
-	}
-	if json.Unmarshal(raw, &in) != nil || len(in.Todos) == 0 {
-		return nil
-	}
-	st := &Steps{Total: len(in.Todos)}
-	for _, t := range in.Todos {
-		if t.Status == "completed" {
-			st.Done++
-		}
-	}
-	return st
 }
 
 func truncate(s string, n int) string {

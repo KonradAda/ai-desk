@@ -57,10 +57,14 @@ func TestSessionLifecycle(t *testing.T) {
 func TestTodoSteps(t *testing.T) {
 	s, _ := newTestStore()
 	s.Apply(Event{SessionID: "a", Cwd: "/p", HookEventName: "PreToolUse", ToolName: "TodoWrite",
-		ToolInput: json.RawMessage(`{"todos":[{"status":"completed"},{"status":"completed"},{"status":"in_progress"},{"status":"pending"}]}`)})
+		ToolInput: json.RawMessage(`{"todos":[
+			{"content":"Plan","status":"completed"},
+			{"content":"Code","status":"completed"},
+			{"content":"Run tests","activeForm":"Running tests","status":"in_progress"},
+			{"content":"Commit","status":"pending"}]}`)})
 	st := snapshot(s)[0].Steps
-	if st == nil || st.Done != 2 || st.Total != 4 {
-		t.Fatalf("want 2/4 steps, got %+v", st)
+	if st == nil || st.Done != 2 || st.Total != 4 || st.Current != "Running tests" {
+		t.Fatalf("want 2/4 steps running tests, got %+v", st)
 	}
 }
 
@@ -299,5 +303,68 @@ func TestProjectNameUsesGitRoot(t *testing.T) {
 	}
 	if got := projectName(filepath.Join(t.TempDir(), "plain")); got != "plain" {
 		t.Fatalf("want plain, got %s", got)
+	}
+}
+
+func planEvent(id, input string) Event {
+	return Event{SessionID: id, Cwd: "/p", HookEventName: "PreToolUse", ToolName: "mcp__ccd_turn__update_plan",
+		ToolInput: json.RawMessage(input)}
+}
+
+func TestDesktopPlanUpdates(t *testing.T) {
+	s, now := newTestStore()
+	s.Apply(planEvent("a", `{"items":[
+		{"content":"Write code","status":"in_progress"},
+		{"content":"Test it","status":"pending"},
+		{"content":"Verify in browser","status":"pending"},
+		{"content":"Commit","status":"pending"}]}`))
+	st := snapshot(s)[0].Steps
+	if st == nil || st.Done != 0 || st.Total != 4 || st.Current != "Write code" {
+		t.Fatalf("unexpected steps after full list: %+v", st)
+	}
+	if a := snapshot(s)[0].Action; a.Kind != ActPlan {
+		t.Fatalf("plan tool should show as planning, got %+v", a)
+	}
+	started := st.Since
+
+	*now = now.Add(time.Minute)
+	s.Apply(planEvent("a", `{"advance":true}`))
+	st = snapshot(s)[0].Steps
+	if st.Done != 1 || st.Current != "Test it" || !st.Since.After(started) {
+		t.Fatalf("advance should complete step 1 and start step 2: %+v", st)
+	}
+
+	// Other tool calls inside the same step keep its start time.
+	since := st.Since
+	*now = now.Add(time.Minute)
+	s.Apply(Event{SessionID: "a", HookEventName: "PreToolUse", ToolName: "Read"})
+	if got := snapshot(s)[0].Steps.Since; !got.Equal(since) {
+		t.Fatal("step start time should not move without plan progress")
+	}
+
+	s.Apply(planEvent("a", `{"done":[2,3],"start":4}`))
+	st = snapshot(s)[0].Steps
+	if st.Done != 3 || st.Current != "Commit" {
+		t.Fatalf("done/start should jump to step 4: %+v", st)
+	}
+
+	s.Apply(planEvent("a", `{"advance":true}`))
+	if st = snapshot(s)[0].Steps; st.Done != 4 || st.Current != "" {
+		t.Fatalf("last advance should finish the plan: %+v", st)
+	}
+
+	// The next task starts without the finished plan.
+	s.Apply(Event{SessionID: "a", HookEventName: "UserPromptSubmit"})
+	if st = snapshot(s)[0].Steps; st != nil {
+		t.Fatalf("finished plan should be cleared on a new prompt: %+v", st)
+	}
+}
+
+func TestUnfinishedPlanSurvivesNewPrompt(t *testing.T) {
+	s, _ := newTestStore()
+	s.Apply(planEvent("a", `{"items":[{"content":"A","status":"completed"},{"content":"B","status":"in_progress"}]}`))
+	s.Apply(Event{SessionID: "a", HookEventName: "UserPromptSubmit"})
+	if st := snapshot(s)[0].Steps; st == nil || st.Done != 1 {
+		t.Fatalf("unfinished plan should stay: %+v", st)
 	}
 }

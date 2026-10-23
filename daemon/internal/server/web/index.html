@@ -48,6 +48,12 @@
   .line { font-size: 13px; color: var(--muted); margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .action { color: var(--text); }
   .title { font-style: italic; margin-top: -4px; }
+  .bar { height: 6px; border-radius: 3px; background: var(--card-border); overflow: hidden; flex-shrink: 0; margin-top: 2px; }
+  .fill { height: 100%; border-radius: 3px; background: var(--working-fg); transition: width 1.5s linear; }
+  .waiting .fill { background: var(--waiting-border); }
+  .done .fill { background: var(--done-fg); }
+  .size-l .bar { height: 10px; border-radius: 5px; }
+  .size-m .bar { height: 8px; border-radius: 4px; }
   .empty { grid-column: 1 / -1; grid-row: 1 / -1; display: flex; flex-direction: column; align-items: center; justify-content: center;
            gap: 12px; color: var(--muted); font-size: 15px; }
   /* Bigger cards (1 or 2 agents on a page) get bigger mascots and text. */
@@ -155,7 +161,7 @@ const STRINGS = {
     newSession: "New session",
     justNow: "just now", minutes: "{m} min", hoursMinutes: "{h} h {m} min",
     finishedAgo: "Finished {ago} ago", finishedJustNow: "Finished just now",
-    step: "step {n}/{total}",
+    step: "Step {n}/{total}",
     empty: "No active agents. Start a Claude Code session.",
     settings: "Settings", close: "Close", previousPage: "Previous page", nextPage: "Next page",
     cardsPerPage: "Agents per screen", cardsPerPageHint: "More agents go to the next pages",
@@ -230,10 +236,29 @@ function metaText(s, now) {
   } else if (s.status !== "idle") {
     meta = duration(minutesSince(new Date(s.turn_start), now));
   }
-  if (s.steps && s.status !== "done") {
-    meta += ` · ${t("step", { n: Math.min(s.steps.done + 1, s.steps.total), total: s.steps.total })}`;
-  }
   return meta;
+}
+
+function stepText(s) {
+  if (!s.steps || s.status === "done") return "";
+  const n = Math.min(s.steps.done + 1, s.steps.total);
+  const label = t("step", { n, total: s.steps.total });
+  return s.steps.current ? `${label} · ${s.steps.current}` : label;
+}
+
+// progress turns the agent's plan into a bar that never lies about being done:
+// the plan fills 0-90%, the last 10% is left for wrapping up, and 100% only
+// comes when the agent stops. Within a step the bar eases toward the next mark
+// the longer the step runs, but never reaches it before the step is completed.
+function progress(s, now) {
+  if (!s.steps) return null;
+  if (s.status === "done") return 100;
+  const { done, total } = s.steps;
+  const per = 90 / total;
+  const base = done * per;
+  const secs = Math.max(0, (now - new Date(s.steps.since)) / 1000);
+  if (done >= total) return 90 + 9 * (1 - Math.exp(-secs / 60));
+  return base + per * 0.85 * (1 - Math.exp(-secs / 120));
 }
 
 function esc(s) { return String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]); }
@@ -286,7 +311,9 @@ function render() {
       <p class="name">${esc(s.project)}</p>
       <p class="line title">${esc(s.title || t("newSession"))}</p>
       <p class="line action">${esc(actionText(s.action))}</p>
+      ${stepText(s) ? `<p class="line">${esc(stepText(s))}</p>` : ""}
       <p class="line">${esc(metaText(s, now))}</p>
+      ${progress(s, now) !== null ? `<div class="bar"><div class="fill" style="width:${progress(s, now).toFixed(1)}%"></div></div>` : ""}
     </div>`;
   });
   grid.innerHTML = html;
@@ -428,7 +455,7 @@ translateStatic();
 render();
 renderSettings();
 connect();
-setInterval(render, 15000);
+setInterval(render, 3000); // keeps clocks and progress bars moving between updates
 </script>
 </body>
 </html>
