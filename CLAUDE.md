@@ -80,6 +80,8 @@ Demo bez prawdziwych agentów (przy działającym daemonie):
 while IFS= read -r l; do printf '%s' "$l" | ./aidesk.exe hook; done < testdata/demo-events.jsonl
 ```
 
+Karty mają stałe miejsca (sloty 0–5): agent nie zmienia pozycji, dopóki trwa sesja. Przeciągnięcie karty w symulatorze zapisuje miejsce projektu w `%APPDATA%\aidesk\layout.json` (na Linuksie i macOS w katalogu konfiguracji użytkownika), więc kolejne sesje tego projektu wracają na to samo miejsce. Nazwa projektu to katalog główny repozytorium git (albo katalog roboczy, gdy nie ma gita).
+
 Zmienne środowiskowe: `AIDESK_ADDR` (domyślnie `127.0.0.1:7777`), `AIDESK_DEBUG=1` (hook wypisuje błędy na stderr zamiast milczeć).
 
 Uwaga przy testach w Git Bash: `echo` z backslashami psuje ścieżki Windows w JSON. Używaj `printf '%s'` i danych z pliku.

@@ -2,12 +2,14 @@ package state
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 )
 
 func newTestStore() (*Store, *time.Time) {
-	s := NewStore()
+	s := NewStore(nil)
 	now := time.Date(2026, 10, 23, 14, 0, 0, 0, time.UTC)
 	s.now = func() time.Time { return now }
 	return s, &now
@@ -22,7 +24,7 @@ func TestSessionLifecycle(t *testing.T) {
 	s.Apply(Event{SessionID: "a", Cwd: cwd, HookEventName: "PreToolUse", ToolName: "Edit",
 		ToolInput: json.RawMessage(`{"file_path":"C:\\Projects\\api-backend\\auth.ts"}`)})
 
-	got := s.Snapshot()
+	got := snapshot(s)
 	if len(got) != 1 {
 		t.Fatalf("want 1 session, got %d", len(got))
 	}
@@ -31,23 +33,23 @@ func TestSessionLifecycle(t *testing.T) {
 	}
 
 	s.Apply(Event{SessionID: "a", HookEventName: "Notification", Message: "Claude needs your permission to use Bash"})
-	if got := s.Snapshot()[0]; got.Status != StatusWaiting || got.Action != "Prosi o zgodę: Bash" {
+	if got := snapshot(s)[0]; got.Status != StatusWaiting || got.Action != "Prosi o zgodę: Bash" {
 		t.Fatalf("unexpected waiting session: %+v", got)
 	}
 
 	s.Apply(Event{SessionID: "a", HookEventName: "PostToolUse"})
-	if st := s.Snapshot()[0].Status; st != StatusWorking {
+	if st := snapshot(s)[0].Status; st != StatusWorking {
 		t.Fatalf("want working after tool ran, got %s", st)
 	}
 
 	*now = now.Add(5 * time.Minute)
 	s.Apply(Event{SessionID: "a", HookEventName: "Stop"})
-	if got := s.Snapshot()[0]; got.Status != StatusDone || !got.FinishedAt.Equal(*now) {
+	if got := snapshot(s)[0]; got.Status != StatusDone || !got.FinishedAt.Equal(*now) {
 		t.Fatalf("unexpected done session: %+v", got)
 	}
 
 	s.Apply(Event{SessionID: "a", HookEventName: "SessionEnd"})
-	if n := len(s.Snapshot()); n != 0 {
+	if n := len(snapshot(s)); n != 0 {
 		t.Fatalf("want session removed, got %d", n)
 	}
 }
@@ -56,27 +58,118 @@ func TestTodoSteps(t *testing.T) {
 	s, _ := newTestStore()
 	s.Apply(Event{SessionID: "a", Cwd: "/p", HookEventName: "PreToolUse", ToolName: "TodoWrite",
 		ToolInput: json.RawMessage(`{"todos":[{"status":"completed"},{"status":"completed"},{"status":"in_progress"},{"status":"pending"}]}`)})
-	st := s.Snapshot()[0].Steps
+	st := snapshot(s)[0].Steps
 	if st == nil || st.Done != 2 || st.Total != 4 {
 		t.Fatalf("want 2/4 steps, got %+v", st)
 	}
 }
 
-func TestSnapshotLimitsAndPrioritizes(t *testing.T) {
-	s, now := newTestStore()
-	for i := range 7 {
-		*now = now.Add(time.Minute)
-		s.Apply(Event{SessionID: string(rune('a' + i)), Cwd: "/p", HookEventName: "Stop"})
-	}
-	// The oldest session asks for attention, so it must stay on screen.
-	s.Apply(Event{SessionID: "a", HookEventName: "Notification"})
+// snapshot is Snapshot without the hidden count, for tests that don't need it.
+func snapshot(s *Store) []Session {
+	v, _ := s.Snapshot()
+	return v
+}
 
-	got := s.Snapshot()
-	if len(got) != MaxCards {
-		t.Fatalf("want %d cards, got %d", MaxCards, len(got))
+func slotOf(s *Store, id string) int {
+	for _, sess := range snapshot(s) {
+		if sess.ID == id {
+			return sess.Slot
+		}
 	}
-	if got[0].ID != "a" {
-		t.Fatalf("want waiting session first, got %s", got[0].ID)
+	return -1
+}
+
+func start(s *Store, id, cwd string) {
+	s.Apply(Event{SessionID: id, Cwd: cwd, HookEventName: "SessionStart"})
+}
+
+func TestSlotsStayFixedWhileAgentsWork(t *testing.T) {
+	s, now := newTestStore()
+	start(s, "a", "/pa")
+	start(s, "b", "/pb")
+	start(s, "c", "/pc")
+	before := map[string]int{"a": slotOf(s, "a"), "b": slotOf(s, "b"), "c": slotOf(s, "c")}
+
+	// Activity in any order must not reshuffle the cards.
+	for _, id := range []string{"c", "a", "b", "c"} {
+		*now = now.Add(time.Minute)
+		s.Apply(Event{SessionID: id, HookEventName: "PreToolUse", ToolName: "Read"})
+	}
+	s.Apply(Event{SessionID: "b", HookEventName: "Notification"})
+	for id, slot := range before {
+		if got := slotOf(s, id); got != slot {
+			t.Fatalf("session %s moved from slot %d to %d", id, slot, got)
+		}
+	}
+}
+
+func TestOverflowWaitsForFreeSlot(t *testing.T) {
+	s, _ := newTestStore()
+	for i := range MaxCards + 1 {
+		start(s, string(rune('a'+i)), "/p"+string(rune('a'+i)))
+	}
+	visible, hidden := s.Snapshot()
+	if len(visible) != MaxCards || hidden != 1 {
+		t.Fatalf("want %d visible and 1 hidden, got %d and %d", MaxCards, len(visible), hidden)
+	}
+	freed := slotOf(s, "c")
+	s.Apply(Event{SessionID: "c", HookEventName: "SessionEnd"})
+	if got := slotOf(s, "g"); got != freed {
+		t.Fatalf("hidden session should take freed slot %d, got %d", freed, got)
+	}
+}
+
+func TestMoveSwapsAndIsRemembered(t *testing.T) {
+	s, _ := newTestStore()
+	start(s, "a", "/alpha")
+	start(s, "b", "/beta")
+	slotA, slotB := slotOf(s, "a"), slotOf(s, "b")
+
+	if !s.Move("a", slotB) {
+		t.Fatal("move failed")
+	}
+	if slotOf(s, "a") != slotB || slotOf(s, "b") != slotA {
+		t.Fatalf("cards should swap: a=%d b=%d", slotOf(s, "a"), slotOf(s, "b"))
+	}
+	if !s.Move("a", 5) || slotOf(s, "a") != 5 {
+		t.Fatal("move to empty slot failed")
+	}
+
+	// A new session of the same project returns to its remembered slot.
+	s.Apply(Event{SessionID: "a", HookEventName: "SessionEnd"})
+	start(s, "a2", "/alpha")
+	if got := slotOf(s, "a2"); got != 5 {
+		t.Fatalf("want remembered slot 5, got %d", got)
+	}
+
+	if s.Move("nope", 1) || s.Move("a2", MaxCards) {
+		t.Fatal("invalid moves should be rejected")
+	}
+}
+
+func TestNewProjectAvoidsClaimedSlots(t *testing.T) {
+	s, _ := newTestStore()
+	start(s, "a", "/alpha")
+	s.Move("a", 0)
+	s.Apply(Event{SessionID: "a", HookEventName: "SessionEnd"})
+
+	// Slot 0 is free but belongs to alpha, so a new project goes elsewhere.
+	start(s, "b", "/beta")
+	if got := slotOf(s, "b"); got == 0 {
+		t.Fatal("new project took a slot claimed by another project")
+	}
+}
+
+func TestLayoutPersists(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "layout.json")
+	s := NewStore(LoadLayout(path))
+	start(s, "a", "/alpha")
+	s.Move("a", 4)
+
+	s2 := NewStore(LoadLayout(path))
+	start(s2, "x", "/Alpha")
+	if got := slotOf(s2, "x"); got != 4 {
+		t.Fatalf("want slot 4 loaded from disk, got %d", got)
 	}
 }
 
@@ -84,7 +177,7 @@ func TestStaleSessionsDropped(t *testing.T) {
 	s, now := newTestStore()
 	s.Apply(Event{SessionID: "a", Cwd: "/p", HookEventName: "Stop"})
 	*now = now.Add(staleAfter + time.Minute)
-	if n := len(s.Snapshot()); n != 0 {
+	if n := len(snapshot(s)); n != 0 {
 		t.Fatalf("want stale session dropped, got %d", n)
 	}
 }
@@ -101,7 +194,7 @@ func TestMascotsUniqueOnScreen(t *testing.T) {
 		s.Apply(Event{SessionID: string(rune('a' + i)), Cwd: "/p" + string(rune('a'+i)), HookEventName: "SessionStart"})
 	}
 	seen := map[int]bool{}
-	for _, sess := range s.Snapshot() {
+	for _, sess := range snapshot(s) {
 		if seen[sess.Mascot] {
 			t.Fatalf("mascot %d used twice", sess.Mascot)
 		}
@@ -109,9 +202,10 @@ func TestMascotsUniqueOnScreen(t *testing.T) {
 	}
 
 	// A second session in the same project keeps the project's mascot.
+	s.Apply(Event{SessionID: "b", HookEventName: "SessionEnd"}) // free a slot so it is visible
 	s.Apply(Event{SessionID: "z", Cwd: "/pa", HookEventName: "SessionStart"})
 	var first, second int
-	for _, sess := range s.Snapshot() {
+	for _, sess := range snapshot(s) {
 		switch sess.ID {
 		case "a":
 			first = sess.Mascot
@@ -121,5 +215,22 @@ func TestMascotsUniqueOnScreen(t *testing.T) {
 	}
 	if first != second {
 		t.Fatalf("same project should share mascot: %d vs %d", first, second)
+	}
+}
+
+func TestProjectNameUsesGitRoot(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "my-repo")
+	sub := filepath.Join(root, "daemon", "internal")
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(root, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if got := projectName(sub); got != "my-repo" {
+		t.Fatalf("want my-repo, got %s", got)
+	}
+	if got := projectName(filepath.Join(t.TempDir(), "plain")); got != "plain" {
+		t.Fatalf("want plain, got %s", got)
 	}
 }

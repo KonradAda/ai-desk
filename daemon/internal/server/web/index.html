@@ -43,6 +43,9 @@
   .empty { grid-column: 1 / -1; grid-row: 1 / -1; display: flex; flex-direction: column; align-items: center; justify-content: center;
            gap: 12px; color: var(--muted); font-size: 15px; }
   .slot { border: 1px dashed var(--card-border); border-radius: 12px; }
+  .card[draggable] { cursor: grab; }
+  .card.dragging { opacity: .4; }
+  .drop { outline: 2px dashed var(--muted); outline-offset: -2px; }
   svg.mascot { image-rendering: pixelated; }
   @keyframes bob { 0%, 100% { transform: translateY(0) } 50% { transform: translateY(-4px) } }
   @keyframes pulse { 0%, 100% { opacity: 1 } 50% { opacity: .4 } }
@@ -96,13 +99,15 @@ let latest = { sessions: [], now: new Date().toISOString() };
 let offset = 0; // server clock minus local clock
 
 function render() {
+  if (dragId) return;
   const now = Date.now() + offset;
   const grid = document.getElementById("grid");
   const sessions = latest.sessions || [];
   const counts = { working: 0, waiting: 0, done: 0 };
   sessions.forEach(s => { if (s.status in counts) counts[s.status]++; });
   document.getElementById("summary").textContent =
-    `${counts.working} pracuje · ${counts.waiting} czeka · ${counts.done} gotowe`;
+    `${counts.working} pracuje · ${counts.waiting} czeka · ${counts.done} gotowe` +
+    (latest.hidden ? ` · +${latest.hidden} poza ekranem` : "");
   document.getElementById("clock").textContent =
     new Date(now).toLocaleTimeString("pl-PL", { hour: "2-digit", minute: "2-digit" });
 
@@ -110,22 +115,52 @@ function render() {
     grid.innerHTML = `<div class="empty">${mascotSVG(0, "idle")}<span>Brak aktywnych agentów. Uruchom sesję Claude Code.</span></div>`;
     return;
   }
+  const bySlot = {};
+  sessions.forEach(s => { bySlot[s.slot] = s; });
   let html = "";
-  for (const s of sessions) {
+  for (let slot = 0; slot < 6; slot++) {
+    const s = bySlot[slot];
+    if (!s) { html += `<div class="slot" data-slot="${slot}"></div>`; continue; }
     let meta = "";
     if (s.status === "done") meta = `Skończył ${ago(new Date(s.finished_at), now)} temu`.replace("przed chwilą temu", "przed chwilą");
     else if (s.status !== "idle") meta = ago(new Date(s.turn_start), now);
     if (s.steps && s.status !== "done") meta += ` · krok ${Math.min(s.steps.done + 1, s.steps.total)}/${s.steps.total}`;
-    html += `<div class="card ${s.status}" title="${esc(s.cwd)}">
+    html += `<div class="card ${s.status}" title="${esc(s.cwd)}" draggable="true" data-id="${esc(s.id)}" data-slot="${slot}">
       <div class="head">${mascotSVG(s.mascot, s.status)}<span class="badge">${LABELS[s.status] || s.status}</span></div>
       <p class="name">${esc(s.project)}</p>
       <p class="line action">${esc(s.action)}</p>
       <p class="line">${esc(meta)}</p>
     </div>`;
   }
-  for (let i = sessions.length; i < 6; i++) html += `<div class="slot"></div>`;
   grid.innerHTML = html;
 }
+
+// Drag a card onto another slot to rearrange; the daemon remembers it per project.
+// Re-rendering is paused while dragging so live updates don't cancel the drag.
+let dragId = null;
+const grid = document.getElementById("grid");
+grid.addEventListener("dragstart", e => {
+  const card = e.target.closest(".card");
+  if (!card) return;
+  dragId = card.dataset.id;
+  card.classList.add("dragging");
+  e.dataTransfer.effectAllowed = "move";
+});
+grid.addEventListener("dragover", e => {
+  const target = e.target.closest("[data-slot]");
+  if (!dragId || !target) return;
+  e.preventDefault();
+  grid.querySelectorAll(".drop").forEach(el => el.classList.remove("drop"));
+  target.classList.add("drop");
+});
+grid.addEventListener("drop", e => {
+  const target = e.target.closest("[data-slot]");
+  if (!dragId || !target) return;
+  e.preventDefault();
+  fetch("/api/move", { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ id: dragId, slot: Number(target.dataset.slot) }) });
+});
+grid.addEventListener("dragend", () => { dragId = null; render(); });
 
 function fit() {
   const screen = document.querySelector(".screen");

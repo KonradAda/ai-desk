@@ -4,6 +4,7 @@ package state
 import (
 	"encoding/json"
 	"hash/fnv"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -47,6 +48,9 @@ type Session struct {
 	UpdatedAt  time.Time `json:"updated_at"`
 	Steps      *Steps    `json:"steps,omitempty"`
 	Mascot     int       `json:"mascot"`
+	// Slot is the fixed card position on screen (0..MaxCards-1), or -1 when
+	// all slots are taken and the session waits off screen.
+	Slot int `json:"slot"`
 }
 
 // Event is the subset of the Claude Code hook payload we use.
@@ -62,12 +66,17 @@ type Event struct {
 type Store struct {
 	mu       sync.Mutex
 	sessions map[string]*Session
+	layout   *Layout
 	now      func() time.Time
 	onChange func()
 }
 
-func NewStore() *Store {
-	return &Store{sessions: map[string]*Session{}, now: time.Now}
+// NewStore creates a store; layout may be nil to keep slot preferences in memory only.
+func NewStore(layout *Layout) *Store {
+	if layout == nil {
+		layout = LoadLayout("")
+	}
+	return &Store{sessions: map[string]*Session{}, layout: layout, now: time.Now}
 }
 
 // OnChange registers a callback invoked (outside the lock) after every update.
@@ -89,12 +98,13 @@ func (s *Store) apply(ev Event) {
 	now := s.now()
 	if ev.HookEventName == "SessionEnd" {
 		delete(s.sessions, ev.SessionID)
+		s.fillSlots()
 		return
 	}
 
 	sess, ok := s.sessions[ev.SessionID]
 	if !ok {
-		project := filepath.Base(filepath.Clean(ev.Cwd))
+		project := projectName(ev.Cwd)
 		sess = &Session{
 			ID:        ev.SessionID,
 			Project:   project,
@@ -103,6 +113,7 @@ func (s *Store) apply(ev Event) {
 			Action:    "Czeka na polecenie",
 			TurnStart: now,
 			Mascot:    s.freeMascot(project),
+			Slot:      s.pickSlot(project),
 		}
 		s.sessions[ev.SessionID] = sess
 	}
@@ -133,32 +144,112 @@ func (s *Store) apply(ev Event) {
 	}
 }
 
-// Snapshot returns up to MaxCards sessions, most recently active first.
-func (s *Store) Snapshot() []Session {
+// Snapshot returns the sessions on screen ordered by slot, and how many
+// more are waiting off screen because all slots are taken.
+func (s *Store) Snapshot() (visible []Session, hidden int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	now := s.now()
-	out := make([]Session, 0, len(s.sessions))
+	pruned := false
 	for id, sess := range s.sessions {
 		if now.Sub(sess.UpdatedAt) > staleAfter {
 			delete(s.sessions, id)
+			pruned = true
+		}
+	}
+	if pruned {
+		s.fillSlots()
+	}
+	visible = make([]Session, 0, MaxCards)
+	for _, sess := range s.sessions {
+		if sess.Slot < 0 {
+			hidden++
 			continue
 		}
-		out = append(out, *sess)
+		visible = append(visible, *sess)
 	}
-	sort.Slice(out, func(i, j int) bool {
-		if pi, pj := priority(out[i].Status), priority(out[j].Status); pi != pj {
-			return pi < pj
-		}
-		return out[i].UpdatedAt.After(out[j].UpdatedAt)
-	})
-	if len(out) > MaxCards {
-		out = out[:MaxCards]
-	}
-	return out
+	sort.Slice(visible, func(i, j int) bool { return visible[i].Slot < visible[j].Slot })
+	return visible, hidden
 }
 
-// priority keeps sessions that need attention on screen when there are more than MaxCards.
+// Move puts a session into the given slot, swapping with whatever card is there,
+// and remembers the new places of both projects for future sessions.
+func (s *Store) Move(id string, slot int) bool {
+	if slot < 0 || slot >= MaxCards {
+		return false
+	}
+	s.mu.Lock()
+	sess, ok := s.sessions[id]
+	if !ok || sess.Slot < 0 {
+		s.mu.Unlock()
+		return false
+	}
+	from := sess.Slot
+	for _, other := range s.sessions {
+		if other != sess && other.Slot == slot {
+			other.Slot = from
+			s.layout.set(other.Project, from)
+		}
+	}
+	sess.Slot = slot
+	s.layout.set(sess.Project, slot)
+	s.layout.save()
+	s.mu.Unlock()
+	if s.onChange != nil {
+		s.onChange()
+	}
+	return true
+}
+
+// pickSlot chooses a free slot for a new session: the project's remembered slot
+// if free, then a free slot no other project has claimed, then any free slot.
+// It returns -1 when the screen is full.
+func (s *Store) pickSlot(project string) int {
+	used := map[int]bool{}
+	for _, sess := range s.sessions {
+		if sess.Slot >= 0 {
+			used[sess.Slot] = true
+		}
+	}
+	if slot, ok := s.layout.preferred(project); ok && !used[slot] {
+		return slot
+	}
+	for slot := range MaxCards {
+		if !used[slot] && !s.layout.reservedBy(slot, project) {
+			return slot
+		}
+	}
+	for slot := range MaxCards {
+		if !used[slot] {
+			return slot
+		}
+	}
+	return -1
+}
+
+// fillSlots moves off-screen sessions into slots freed by ended sessions,
+// those that need attention first.
+func (s *Store) fillSlots() {
+	var waiting []*Session
+	for _, sess := range s.sessions {
+		if sess.Slot < 0 {
+			waiting = append(waiting, sess)
+		}
+	}
+	sort.Slice(waiting, func(i, j int) bool {
+		if pi, pj := priority(waiting[i].Status), priority(waiting[j].Status); pi != pj {
+			return pi < pj
+		}
+		return waiting[i].UpdatedAt.After(waiting[j].UpdatedAt)
+	})
+	for _, sess := range waiting {
+		if sess.Slot = s.pickSlot(sess.Project); sess.Slot < 0 {
+			return
+		}
+	}
+}
+
+// priority decides which off-screen session gets a freed slot first.
 func priority(st Status) int {
 	switch st {
 	case StatusWaiting:
@@ -188,6 +279,24 @@ func (s *Store) freeMascot(project string) int {
 		}
 	}
 	return start
+}
+
+// projectName names a session after its git repository root, so an agent that
+// works in a subdirectory still shows the project name. Without git it falls
+// back to the working directory's name.
+func projectName(cwd string) string {
+	dir := filepath.Clean(cwd)
+	for d := dir; ; {
+		if _, err := os.Stat(filepath.Join(d, ".git")); err == nil {
+			return filepath.Base(d)
+		}
+		parent := filepath.Dir(d)
+		if parent == d {
+			break
+		}
+		d = parent
+	}
+	return filepath.Base(dir)
 }
 
 func mascotFor(project string) int {

@@ -33,6 +33,7 @@ func New(store *state.Store) *Server {
 type stateResponse struct {
 	Now      time.Time       `json:"now"`
 	Sessions []state.Session `json:"sessions"`
+	Hidden   int             `json:"hidden"`
 }
 
 func (s *Server) Handler() http.Handler {
@@ -42,7 +43,24 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /event", s.handleEvent)
 	mux.HandleFunc("GET /api/state", s.handleState)
 	mux.HandleFunc("GET /api/stream", s.handleStream)
+	mux.HandleFunc("POST /api/move", s.handleMove)
 	return mux
+}
+
+func (s *Server) handleMove(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		ID   string `json:"id"`
+		Slot int    `json:"slot"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	if !s.store.Move(req.ID, req.Slot) {
+		http.Error(w, "unknown session or slot", http.StatusNotFound)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) handleEvent(w http.ResponseWriter, r *http.Request) {
@@ -112,7 +130,8 @@ func (s *Server) notify() {
 }
 
 func (s *Server) snapshot() stateResponse {
-	return stateResponse{Now: time.Now(), Sessions: s.store.Snapshot()}
+	sessions, hidden := s.store.Snapshot()
+	return stateResponse{Now: time.Now(), Sessions: sessions, Hidden: hidden}
 }
 
 func shortID(id string) string {

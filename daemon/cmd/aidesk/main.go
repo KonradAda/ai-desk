@@ -45,7 +45,11 @@ func main() {
 }
 
 func serve(addr string) {
-	srv := server.New(state.NewStore())
+	var layoutPath string
+	if dir, err := os.UserConfigDir(); err == nil {
+		layoutPath = filepath.Join(dir, "aidesk", "layout.json")
+	}
+	srv := server.New(state.NewStore(state.LoadLayout(layoutPath)))
 	log.Printf("aidesk listening on http://%s", addr)
 	log.Fatal(http.ListenAndServe(addr, srv.Handler()))
 }
