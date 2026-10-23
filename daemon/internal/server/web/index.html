@@ -79,17 +79,17 @@
   /* Two rows of cards (3-6 agents) are short, so they get a smaller mascot and tighter spacing. */
   .rows-2 .card { padding: 9px 12px; gap: 3px; }
   .rows-2 .head { height: 28px; }
-  .rows-2 svg.mascot { width: 50px; height: 28px; }
+  .rows-2 svg.mascot { width: 36px; height: 28px; }
   /* Bigger cards (1 or 2 agents on a page) get bigger mascots and text. */
   .size-l .card { padding: 22px 28px; gap: 8px; justify-content: center; }
   .size-l .head { height: auto; }
-  .size-l svg.mascot { width: 160px; height: 89px; }
+  .size-l svg.mascot { width: 116px; height: 89px; }
   .size-l .badge { font-size: 18px; padding: 6px 16px; }
   .size-l .name { font-size: 36px; }
   .size-l .line { font-size: 20px; }
   .size-m .card { padding: 18px; gap: 10px; justify-content: center; }
   .size-m .head { height: auto; }
-  .size-m svg.mascot { width: 144px; height: 80px; }
+  .size-m svg.mascot { width: 104px; height: 80px; }
   .size-m .badge { font-size: 14px; padding: 4px 12px; }
   .size-m .name { font-size: 24px; }
   .size-m .line { font-size: 15px; }
@@ -101,6 +101,9 @@
   @keyframes pulse { 0%, 100% { opacity: 1 } 50% { opacity: .4 } }
   .working svg.mascot { animation: bob .8s ease-in-out infinite; }
   .waiting svg.mascot { animation: pulse 1.1s ease-in-out infinite; }
+  /* Two-frame animations inside the mascot (wand sparkles). */
+  .mascot .fr { animation: frames .7s linear infinite; }
+  @keyframes frames { 0%, 49.99% { opacity: 1 } 50%, 100% { opacity: 0 } }
 
   .pager { display: flex; align-items: center; justify-content: center; gap: 14px; height: 28px; }
   .pager[hidden] { display: none; }
@@ -228,19 +231,44 @@ const SHAPES = [
     sleep: ["A........A", ".XXXXXXXX.", "XX--XX--XX", "XXXXXXXXXX", "XXXXXXXXXX", "XXXXXXXXXX"] },
 ];
 
+// The mascot wears a wizard hat and holds a wand. The canvas is 13x10 cells:
+// the hat on top, the body below it, the wand to the right of the body.
+// H hat, Y gold, B wood, * sparkle.
+const HAT = [".....H.......", "....HHH......", "...HHYHH.....", ".HHHHHHHHH..."];
+const WAND = [[10, 7, "B"], [11, 6, "B"], [12, 5, "Y"]];
+// While working, sparkles fly off the wand in two alternating frames.
+const SPARKLES = [[[11, 3], [12, 1]], [[12, 3], [10, 2], [11, 0]]];
+const MAGIC = { H: "#534AB7", Y: "#F2C14E", B: "#8A5A2B", "*": "#7FD6FF" };
+
 function mascotSVG(index, status) {
   const color = COLORS[index % COLORS.length];
   const shape = SHAPES[index % SHAPES.length];
   const rows = status === "done" || status === "idle" ? shape.sleep : shape.awake;
   const u = 6;
+  const cell = (x, y, fill) => `<rect x="${x*u}" y="${y*u}" width="${u}" height="${u}" fill="${fill}"/>`;
+  // On the antenna shape the hat sits one row lower, covering the antennas.
+  const hatTop = rows[0].includes("A") ? 1 : 0;
+  const bodyTop = 4;
   let rects = "";
   rows.forEach((row, y) => [...row].forEach((ch, x) => {
-    if (ch === "X" || ch === "A") rects += `<rect x="${x*u}" y="${y*u}" width="${u}" height="${u}" fill="${color}"/>`;
-    else if (ch === "O") rects += `<rect x="${x*u}" y="${y*u}" width="${u}" height="${u}" fill="${EYE}"/>`;
-    else if (ch === "-") rects += `<rect x="${x*u}" y="${y*u+u/2}" width="${u}" height="${u/2}" fill="${EYE}"/>`;
+    const py = bodyTop + y;
+    if ((ch === "X" || ch === "A") && py >= hatTop + HAT.length) rects += cell(x, py, color);
+    else if (ch === "O") rects += cell(x, py, EYE);
+    else if (ch === "-") rects += `<rect x="${x*u}" y="${py*u+u/2}" width="${u}" height="${u/2}" fill="${EYE}"/>`;
   }));
-  if (status === "done") rects += `<text x="62" y="10" font-size="11" fill="#a3a199" font-family="monospace">z</text>`;
-  return `<svg class="mascot" width="72" height="40" viewBox="0 0 72 40" shape-rendering="crispEdges" aria-hidden="true">${rects}</svg>`;
+  // The purple mascot would blend into the purple hat, so it gets a burgundy one.
+  const hat = { ...MAGIC, H: color === "#7F77DD" ? "#993556" : MAGIC.H };
+  HAT.forEach((row, y) => [...row].forEach((ch, x) => { if (ch !== ".") rects += cell(x, hatTop + y, hat[ch]); }));
+  WAND.forEach(([x, y, ch]) => { rects += cell(x, y, MAGIC[ch]); });
+  if (status === "working") {
+    // Frames switch through a CSS animation timed by the wall clock, so redrawing doesn't restart it.
+    const period = 700;
+    const phase = -(Date.now() % period);
+    rects += SPARKLES.map((pts, i) =>
+      `<g class="fr" style="animation-delay:${phase - (period / 2) * i}ms">${pts.map(([x, y]) => cell(x, y, MAGIC["*"])).join("")}</g>`).join("");
+  }
+  if (status === "done") rects += `<text x="64" y="12" font-size="12" fill="#a3a199" font-family="monospace">z</text>`;
+  return `<svg class="mascot" width="62" height="48" viewBox="0 0 78 60" shape-rendering="crispEdges" aria-hidden="true">${rects}</svg>`;
 }
 
 function minutesSince(from, now) { return Math.max(0, Math.floor((now - from) / 60000)); }
