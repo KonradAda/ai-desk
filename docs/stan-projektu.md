@@ -65,12 +65,26 @@ Potem otwórz http://127.0.0.1:7777 (ekran) i http://127.0.0.1:7777/gallery.html
 - **Przerysowanie elementu restartuje animacje CSS.** Rozwiązanie: każda animacja dostaje ujemne opóźnienie liczone od zegara. To samo przyda się na ESP32: faza animacji ma wynikać z czasu, a nie z momentu rysowania.
 - **Przejścia między stanami muszą startować od pozy, w której stworek akurat jest,** a następna animacja od początku swojego cyklu. Inaczej widać skoki.
 - **Windows:** nie da się przebudować `aidesk.exe`, gdy daemon działa, więc najpierw `taskkill`. W Git Bash `echo` z backslashami psuje JSON, więc do testów używać `printf '%s'` i danych z pliku (`testdata/demo-events.jsonl`).
+- **Daemon uruchomiony z sesji aplikacji Claude (np. przez agenta) widzi zwirtualizowany `%APPDATA%`**, więc zapisuje ustawienia i układ w `%LOCALAPPDATA%\Packages\Claude_pzs8sxrjxfjjc\LocalCache\Roamingidesk`, a nie w `%APPDATA%idesk`. Daemon uruchomiony samodzielnie z terminala ma więc osobne ustawienia. Do rozwiązania przy autostarcie (np. jawna ścieżka w `os.UserHomeDir()`).
 - **Testowy daemon na innym porcie** (`AIDESK_ADDR`) z osobnym `AIDESK_CONFIG_DIR` nie rusza prawdziwych ustawień i układu. Port 7778 jest na tym komputerze zajęty, więc używać np. 7790.
+
+## Kliknięcie w kartę: wyniki badania (23.10.2026)
+
+Sprawdzone na żywo: **da się otworzyć konkretną sesję w aplikacji desktopowej Claude jednym linkiem.**
+
+- Aplikacja Claude rejestruje w Windowsie linki `claude://`. Link **`claude://code/continue?session=<local_id>`** przełącza aplikację na wskazaną sesję. Test: link do „Sesja testowa” spowodował w logu aplikacji `LocalSessions.setFocusedSession: sessionId=local_be4b10bd-…`.
+- `<local_id>` to wewnętrzne ID aplikacji (format `local_…`, sprawdzane regexem `^local_[A-Za-z0-9-]{1,64}$`), a **nie** UUID sesji, które dostajemy z hooków.
+- **Powiązanie obu ID:** Claude Code dla każdej działającej sesji zapisuje `~/.claude/sessions/<pid>.json` z polami `sessionId` (UUID z hooków), `hostSessionId` (`local_…` z aplikacji), `entrypoint` (`claude-desktop` albo terminal), `pid`, `cwd`, `name` (tytuł) i `status`. Daemon może to czytać i znaleźć `local_…` dla karty. Pliki `<pid>.*.key` w tym folderze to klucze: nie czytać ich i nie wysyłać.
+- Inne linki znalezione w aplikacji: `claude://code/continue?session=last` (ostatnia sesja), `claude://code/needs-input` (sesje czekające na użytkownika), `claude://code/new` (nowa sesja, z parametrami `q`/`prompt`, `folder`). `claude://resume?session=<UUID>` **importuje** sesję z terminala do aplikacji, a tego dla kart nie chcemy.
+- **Sesje w terminalu:** do wyciągnięcia okna na wierzch przyda się `pid` z tego samego pliku (proces Claude Code, a od niego w górę do okna terminala). Wybór konkretnej karty w Windows Terminal czy VS Code pozostaje trudny.
+- Ograniczenia: to nieudokumentowane zachowanie aplikacji, więc może się zmienić w nowej wersji. Aplikacja ma ustawienie, które wyłącza takie linki (w kodzie „entry points off”). Na Macu i Linuksie trzeba będzie sprawdzić osobno.
+
+Plan wdrożenia: daemon czyta `~/.claude/sessions/*.json` i dokleja do sesji `host_id` oraz `pid`. Kliknięcie w kartę wysyła `POST /api/open`, a daemon dla sesji z aplikacji otwiera `claude://code/continue?session=<host_id>`, a dla terminala wyciąga okno na wierzch.
 
 ## Znane ograniczenia
 
 - **Daemon trzeba uruchamiać ręcznie.** Nie ma autostartu ani ikony w zasobniku.
-- **Kliknięcie w kartę nic nie robi.** Przeniesienie do właściwej sesji na komputerze to kolejny duży krok.
+- **Kliknięcie w kartę nic nie robi** (jeszcze). Droga jest zbadana, patrz „Kliknięcie w kartę: wyniki badania”.
 - **Zatwierdzanie z urządzenia** (zgoda na komendę) świadomie odłożone: każdy, kto dotknie ekranu, mógłby coś zatwierdzić.
 - **Daemon nie pamięta stanu po restarcie.** Sesje wracają przy swojej następnej akcji, a trwający plan dopiero przy pełnej liście kroków. Przypięcia trybu ręcznego też giną.
 - **Grupowanie po samej nazwie folderu:** dwa różne repozytoria o tej samej nazwie trafią do jednej grupy. Worktree z aplikacji desktopowej (`.claude/worktrees/...`) nie trafią do grupy swojego repozytorium.
@@ -82,7 +96,7 @@ Potem otwórz http://127.0.0.1:7777 (ekran) i http://127.0.0.1:7777/gallery.html
 ## Co dalej (proponowana kolejność)
 
 1. **Wygoda na co dzień:** autostart daemona (ikona w zasobniku Windows) i używanie przez kilka dni przy normalnej pracy. Notować, czego brakuje.
-2. **Kliknięcie w kartę przenosi do sesji** na komputerze (terminal albo aplikacja).
+2. **Kliknięcie w kartę przenosi do sesji:** dla aplikacji przez `claude://code/continue?session=<local_id>` (zbadane, działa), dla terminala wyciągnięcie okna na wierzch.
 3. **Grupy liczone w daemonie:** pełna ścieżka repozytorium, worktree do głównego repozytorium, strony przenoszą całą grupę na następną stronę, jeśli się zmieści.
 4. **Sprzęt:** zamówić płytkę ESP32-S3 z ekranem 7″ 800×480 (Waveshare albo Elecrow), opisać protokół PC↔urządzenie (NDJSON po USB) w `protocol/`, pierwszy firmware w C++ z LVGL. Najpierw test: kolorowy prostokąt i dotyk.
 5. **Animacje pod ESP32:** zamienić animacje transformacji na klatki i ustawić całkowite skalowanie stworków.
