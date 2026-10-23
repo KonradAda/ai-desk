@@ -26,7 +26,9 @@
   .top { display: flex; justify-content: space-between; font-size: 13px; color: var(--muted); padding: 0 4px; }
   .conn { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #e24b4a; margin-right: 6px; }
   .conn.on { background: #639922; }
-  .grid { flex: 1; display: grid; grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(2, 1fr); gap: 10px; }
+  /* 6 columns so rows of 1, 2 or 3 cards all divide evenly; render() sets rows and spans. */
+  .grid { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(6, 1fr); grid-template-rows: 1fr; gap: 10px; }
+  .grid.rows-2 { grid-template-rows: 1fr 1fr; }
   .card { background: var(--card); border: 1px solid var(--card-border); border-radius: 12px; padding: 12px;
           display: flex; flex-direction: column; gap: 6px; min-width: 0; }
   .card.waiting { border: 2px solid var(--waiting-border); }
@@ -43,7 +45,19 @@
   .title { font-style: italic; margin-top: -4px; }
   .empty { grid-column: 1 / -1; grid-row: 1 / -1; display: flex; flex-direction: column; align-items: center; justify-content: center;
            gap: 12px; color: var(--muted); font-size: 15px; }
-  .slot { border: 1px dashed var(--card-border); border-radius: 12px; }
+  /* Bigger cards (1 or 2 agents on screen) get bigger mascots and text. */
+  .size-l .card { padding: 28px; gap: 12px; justify-content: center; }
+  .size-l .head { height: auto; }
+  .size-l svg.mascot { width: 216px; height: 120px; }
+  .size-l .badge { font-size: 18px; padding: 6px 16px; }
+  .size-l .name { font-size: 36px; }
+  .size-l .line { font-size: 20px; }
+  .size-m .card { padding: 18px; gap: 10px; justify-content: center; }
+  .size-m .head { height: auto; }
+  .size-m svg.mascot { width: 144px; height: 80px; }
+  .size-m .badge { font-size: 14px; padding: 4px 12px; }
+  .size-m .name { font-size: 24px; }
+  .size-m .line { font-size: 15px; }
   .card[draggable] { cursor: grab; }
   .card.dragging { opacity: .4; }
   .drop { outline: 2px dashed var(--muted); outline-offset: -2px; }
@@ -113,27 +127,31 @@ function render() {
     new Date(now).toLocaleTimeString("pl-PL", { hour: "2-digit", minute: "2-digit" });
 
   if (sessions.length === 0) {
+    grid.className = "grid";
     grid.innerHTML = `<div class="empty">${mascotSVG(0, "idle")}<span>Brak aktywnych agentów. Uruchom sesję Claude Code.</span></div>`;
     return;
   }
-  const bySlot = {};
-  sessions.forEach(s => { bySlot[s.slot] = s; });
+  // Cards fill the screen in slot order: 1 = full screen, 2 = halves, 3 = 2+1,
+  // 4 = 2+2, 5 = 3+2, 6 = 3+3. The top row gets the extra card when odd.
+  const n = sessions.length;
+  const rows = n <= 2 ? 1 : 2;
+  const top = Math.ceil(n / rows);
+  grid.className = `grid rows-${rows} ${n === 1 ? "size-l" : n === 2 ? "size-m" : ""}`;
   let html = "";
-  for (let slot = 0; slot < 6; slot++) {
-    const s = bySlot[slot];
-    if (!s) { html += `<div class="slot" data-slot="${slot}"></div>`; continue; }
+  sessions.forEach((s, i) => {
+    const span = 6 / (i < top ? top : n - top);
     let meta = "";
     if (s.status === "done") meta = `Skończył ${ago(new Date(s.finished_at), now)} temu`.replace("przed chwilą temu", "przed chwilą");
     else if (s.status !== "idle") meta = ago(new Date(s.turn_start), now);
     if (s.steps && s.status !== "done") meta += ` · krok ${Math.min(s.steps.done + 1, s.steps.total)}/${s.steps.total}`;
-    html += `<div class="card ${s.status}" title="${esc(s.cwd)}" draggable="true" data-id="${esc(s.id)}" data-slot="${slot}">
+    html += `<div class="card ${s.status}" style="grid-column: span ${span}" title="${esc(s.cwd)}" draggable="true" data-id="${esc(s.id)}" data-slot="${s.slot}">
       <div class="head">${mascotSVG(s.mascot, s.status)}<span class="badge">${LABELS[s.status] || s.status}</span></div>
       <p class="name">${esc(s.project)}</p>
       <p class="line title">${esc(s.title || "Nowa sesja")}</p>
       <p class="line action">${esc(s.action)}</p>
       <p class="line">${esc(meta)}</p>
     </div>`;
-  }
+  });
   grid.innerHTML = html;
 }
 
