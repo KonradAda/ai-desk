@@ -30,6 +30,11 @@ const SPARKLES = [[[11, 3], [12, 1]], [[12, 3], [10, 2], [11, 0]]];
 const MAGIC = { H: "#534AB7", Y: "#F2C14E", B: "#8A5A2B", "*": "#7FD6FF" };
 // One snore (breath in and out) takes this long; the Zzz rise to the same rhythm.
 const SNORE = 3000;
+// One hop while working takes this long, and the wand sparkles switch frames
+// on the way up and on the way down. A pulse while waiting takes PULSE.
+// Keep in step with bob and pulse in mascot.css.
+const HOP = 800;
+const PULSE = 1100;
 
 // Changes between sleeping and awake play a short animation of eye frames
 // instead of jumping straight to the new state. Each lasts TRANSITION ms;
@@ -91,7 +96,7 @@ function mascotSVG(index, status, change = null) {
   WAND.forEach(([x, y, ch]) => { out += cell(x, y, MAGIC[ch]); });
   if (moving) return `<svg class="mascot changing" width="62" height="48" viewBox="0 0 78 60" shape-rendering="crispEdges" aria-hidden="true">${out}</svg>`;
   if (status === "working") {
-    const period = 700;
+    const period = HOP;
     out += SPARKLES.map((pts, i) =>
       `<g class="fr" style="animation-delay:${clock(period) - (period / 2) * i}ms">${pts.map(([x, y]) => cell(x, y, MAGIC["*"])).join("")}</g>`).join("");
   }
@@ -100,5 +105,9 @@ function mascotSVG(index, status, change = null) {
     out += [0, 1, 2].map(i =>
       `<text class="zzz" x="58" y="26" font-size="11" font-weight="700" fill="#b4b2a9" font-family="monospace" style="animation-delay:${clock(SNORE) - (SNORE / 3) * i}ms">Z</text>`).join("");
   }
-  return `<svg class="mascot" width="62" height="48" viewBox="0 0 78 60" shape-rendering="crispEdges" aria-hidden="true">${out}</svg>`;
+  // The hop and the pulse run on the whole mascot; timing them by the clock too
+  // keeps them smooth when the card is redrawn.
+  const whole = status === "working" ? clock(HOP) : status === "waiting" ? clock(PULSE) : null;
+  const style = whole === null ? "" : ` style="animation-delay:${whole}ms"`;
+  return `<svg class="mascot" width="62" height="48" viewBox="0 0 78 60" shape-rendering="crispEdges" aria-hidden="true"${style}>${out}</svg>`;
 }
