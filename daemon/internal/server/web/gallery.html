@@ -56,9 +56,9 @@ document.getElementById("colors").innerHTML = COLORS.map((_, i) => cell(i, "work
 // smoothly from it.
 const PHASES = [
   ["sleep", 1000, "done", "sleep"],
-  ["wake", TRANSITION, "working", "wake"],
+  ["wake", TRANSITIONS.wake.ms, "working", "wake"],
   ["work", 1600, "working", "wake"],
-  ["fall", TRANSITION, "done", "sleep"],
+  ["fall", TRANSITIONS.sleep.ms, "done", "sleep"],
 ];
 const LOOP = PHASES.reduce((sum, [, ms]) => sum + ms, 0);
 setInterval(() => {
@@ -69,12 +69,14 @@ setInterval(() => {
   const [name, , status, kind] = phase;
   // When the current kind of change began: this phase for "wake"/"fall",
   // the phase before it for "work"/"sleep".
-  const changeStart = name === "work" ? start - TRANSITION : name === "sleep" ? loopStart - TRANSITION : start;
+  const changeStart = name === "work" ? start - TRANSITIONS.wake.ms : name === "sleep" ? loopStart - TRANSITIONS.sleep.ms : start;
   document.querySelectorAll(".cycle").forEach(el => {
     if (el.dataset.phase === name) return;
     el.dataset.phase = name;
     el.className = `cell cycle ${status}`;
-    el.innerHTML = mascotSVG(Number(el.dataset.index), status, { kind, ago: now - changeStart });
+    // Like the screen: a change eases back from the pose the mascot has right now.
+    const pose = name === "wake" || name === "fall" ? poseOf(el.querySelector("svg.mascot")) : {};
+    el.innerHTML = mascotSVG(Number(el.dataset.index), status, { kind, ago: now - changeStart, ...pose });
   });
 }, 20);
 </script>
