@@ -65,7 +65,7 @@ Potem otwórz http://127.0.0.1:7777 (ekran) i http://127.0.0.1:7777/gallery.html
 - **Przerysowanie elementu restartuje animacje CSS.** Rozwiązanie: każda animacja dostaje ujemne opóźnienie liczone od zegara. To samo przyda się na ESP32: faza animacji ma wynikać z czasu, a nie z momentu rysowania.
 - **Przejścia między stanami muszą startować od pozy, w której stworek akurat jest,** a następna animacja od początku swojego cyklu. Inaczej widać skoki.
 - **Windows:** nie da się przebudować `aidesk.exe`, gdy daemon działa, więc najpierw `taskkill`. W Git Bash `echo` z backslashami psuje JSON, więc do testów używać `printf '%s'` i danych z pliku (`testdata/demo-events.jsonl`).
-- **Daemon uruchomiony z sesji aplikacji Claude (np. przez agenta) widzi zwirtualizowany `%APPDATA%`**, więc zapisuje ustawienia i układ w `%LOCALAPPDATA%\Packages\Claude_pzs8sxrjxfjjc\LocalCache\Roamingidesk`, a nie w `%APPDATA%idesk`. Daemon uruchomiony samodzielnie z terminala ma więc osobne ustawienia. Do rozwiązania przy autostarcie (np. jawna ścieżka w `os.UserHomeDir()`).
+- **Daemon uruchomiony z sesji aplikacji Claude (np. przez agenta) widzi zwirtualizowany `%APPDATA%`**, więc zapisuje ustawienia i układ w `%LOCALAPPDATA%\Packages\Claude_pzs8sxrjxfjjc\LocalCache\Roaming\aidesk`, a nie w `%APPDATA%\aidesk`. Daemon uruchomiony samodzielnie z terminala ma więc osobne ustawienia. Do rozwiązania przy autostarcie (np. jawna ścieżka w `os.UserHomeDir()`).
 - **Testowy daemon na innym porcie** (`AIDESK_ADDR`) z osobnym `AIDESK_CONFIG_DIR` nie rusza prawdziwych ustawień i układu. Port 7778 jest na tym komputerze zajęty, więc używać np. 7790.
 
 ## Kliknięcie w kartę: wyniki badania (23.10.2026)
