@@ -273,19 +273,22 @@ function stepText(s) {
   return s.steps.current ? `${label} · ${s.steps.current}` : label;
 }
 
-// progress turns the agent's plan into a bar that never lies about being done:
-// the plan fills 0-90%, the last 10% is left for wrapping up, and 100% only
-// comes when the agent stops. Within a step the bar eases toward the next mark
-// the longer the step runs, but never reaches it before the step is completed.
+// progress turns the agent's plan into a bar that matches the step shown on the
+// card: "Step 2/4" starts at 50%, "Step 3/4" at 75%. The last step starts short
+// of the end (up to 15% before it), and 100% only comes when the agent stops.
+// Within a step the bar eases toward the next step's mark the longer the step
+// runs, but never reaches it before the step is completed.
 function progress(s, now) {
   if (!s.steps) return null;
   if (s.status === "done") return 100;
   const { done, total } = s.steps;
-  const per = 90 / total;
-  const base = done * per;
+  const step = Math.min(done + 1, total); // the step number shown on the card
+  const lastMark = 100 - Math.min(15, 60 / total);
+  const mark = n => (n >= total ? lastMark : (n / total) * 100);
+  const from = mark(step);
+  const to = step >= total ? 99 : mark(step + 1);
   const secs = Math.max(0, (now - new Date(s.steps.since)) / 1000);
-  if (done >= total) return 90 + 9 * (1 - Math.exp(-secs / 60));
-  return base + per * 0.85 * (1 - Math.exp(-secs / 120));
+  return from + (to - from) * 0.85 * (1 - Math.exp(-secs / 120));
 }
 
 function esc(s) { return String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]); }
