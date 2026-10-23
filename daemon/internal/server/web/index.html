@@ -31,8 +31,8 @@
   .icon-btn { width: 28px; height: 24px; display: flex; align-items: center; justify-content: center; border-radius: 6px; color: var(--muted); }
   .icon-btn:hover { background: var(--card); color: var(--text); }
 
-  /* 6 columns so rows of 1, 2 or 3 cards all divide evenly; render() sets rows and spans. */
-  .grid { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(6, 1fr); grid-template-rows: 1fr; gap: 10px; touch-action: pan-y; }
+  /* 60 columns so rows of 1 to 6 cards all divide evenly; render() sets rows and spans. */
+  .grid { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(60, 1fr); grid-template-rows: 1fr; gap: 10px; touch-action: pan-y; }
   .grid.rows-2 { grid-template-rows: 1fr 1fr; }
   .card { background: var(--card); border: 1px solid var(--card-border); border-radius: 12px; padding: 12px;
           display: flex; flex-direction: column; gap: 6px; min-width: 0; min-height: 0; overflow: hidden; }
@@ -40,6 +40,11 @@
   /* Agents of one project share a box (later: the arena where they fight one enemy together),
      split by a thin line. Cards inside drop their own frame. */
   .group { display: flex; min-width: 0; min-height: 0; background: var(--card); border: 1px solid var(--card-border); border-radius: 12px; overflow: hidden; }
+  /* Each group has its own faded color; the project name sits on a stronger label of it.
+     A group cut across rows keeps the color on both parts. */
+  .group.tinted, .card.tinted { background: color-mix(in srgb, var(--group) 11%, var(--card)); border-color: color-mix(in srgb, var(--group) 35%, var(--card-border)); }
+  .group.tinted .card + .card { border-left-color: color-mix(in srgb, var(--group) 30%, var(--card-border)); }
+  .tinted .name span { background: color-mix(in srgb, var(--group) 55%, var(--card)); padding: 0 8px; border-radius: 6px; }
   .group .card { flex: 1 1 0; border: 0; border-radius: 0; background: none; }
   .group .card + .card { border-left: 1px solid var(--card-border); }
   .group .card.waiting { border: 0; box-shadow: inset 0 0 0 2px var(--waiting-border); }
@@ -318,6 +323,38 @@ let dragId = null;
 
 // groupOrder keeps the agents of one project next to each other: projects
 // come in the order of their first card, agents within one by slot.
+// Group colors are muted and keep clear of the status colors (blue, orange, green).
+const GROUP_COLORS = ["#7F77DD", "#D4537E", "#5DCAA5", "#B4B2A9", "#ED93B1", "#AFA9EC"];
+
+// groupColors gives every project with two or more agents its own color, in
+// card order, so groups on one screen never share a color.
+function groupColors(sessions) {
+  const count = {};
+  sessions.forEach(s => { count[s.project] = (count[s.project] || 0) + 1; });
+  const colors = {};
+  let next = 0;
+  sessions.forEach(s => {
+    if (count[s.project] > 1 && !(s.project in colors)) colors[s.project] = GROUP_COLORS[next++ % GROUP_COLORS.length];
+  });
+  return colors;
+}
+
+// splitRows picks how many cards go in the top row: a split that keeps every
+// project's group whole, as even as possible (top row bigger on a tie), with
+// at most 4 cards per row. If none exists, the group is cut and its color
+// shows the two parts belong together.
+function splitRows(sessions) {
+  const n = sessions.length;
+  const cuts = i => sessions[i - 1].project === sessions[i].project;
+  let best = null;
+  for (let top = 1; top < n; top++) {
+    if (cuts(top) || top > 4 || n - top > 4) continue;
+    if (best === null || Math.abs(top - n / 2) < Math.abs(best - n / 2) ||
+        (Math.abs(top - n / 2) === Math.abs(best - n / 2) && top > best)) best = top;
+  }
+  return best ?? Math.ceil(n / 2);
+}
+
 function groupOrder(sessions) {
   const first = {};
   sessions.forEach(s => { if (!(s.project in first) || s.slot < first[s.project]) first[s.project] = s.slot; });
@@ -352,22 +389,21 @@ function render() {
     grid.innerHTML = `<div class="empty">${mascotSVG(0, "idle")}<span>${esc(t("empty"))}</span></div>`;
     return;
   }
-  // Cards fill the page in slot order: 1 = full screen, 2 = halves, 3 = 2+1,
-  // 4 = 2+2, 5 = 3+2 (or 2+3), 6 = 3+3.
+  // Cards fill the page in group order: 1 = full screen, 2 = halves, 3 or more
+  // in two rows, split so project groups stay whole (e.g. 4 = 2+2, or 3+1 for
+  // a group of three).
   const sessions = pageList[page];
   const n = sessions.length;
   const rows = n <= 2 ? 1 : 2;
-  // With an odd count either row may hold the extra card; pick the split that
-  // doesn't cut a project's group in two, preferring the bigger top row.
-  const cuts = i => i > 0 && i < n && sessions[i - 1].project === sessions[i].project;
-  const top = rows === 1 ? n : [Math.ceil(n / 2), Math.floor(n / 2)].find(i => !cuts(i)) ?? Math.ceil(n / 2);
+  const top = rows === 1 ? n : splitRows(sessions);
+  const colors = groupColors(all);
   grid.className = `grid rows-${rows} ${n === 1 ? "size-l" : n === 2 ? "size-m" : ""}`;
   // Split each row into runs of cards from the same project; a run of two or
   // more becomes one shared box spanning the columns of its cards.
   const runs = [];
   sessions.forEach((s, i) => {
     const row = i < top ? 0 : 1;
-    const span = 6 / (row === 0 ? top : n - top);
+    const span = 60 / (row === 0 ? top : n - top);
     const last = runs[runs.length - 1];
     if (last && last.row === row && last.project === s.project) {
       last.cards.push(s);
@@ -376,16 +412,21 @@ function render() {
       runs.push({ row, project: s.project, cards: [s], span });
     }
   });
-  grid.innerHTML = runs.map(r => r.cards.length > 1
-    ? `<div class="group" style="grid-column: span ${r.span}">${r.cards.map(s => cardHTML(s, now)).join("")}</div>`
-    : cardHTML(r.cards[0], now, r.span)).join("");
+  grid.innerHTML = runs.map(r => {
+    const color = colors[r.project];
+    return r.cards.length > 1
+      ? `<div class="group${color ? " tinted" : ""}" style="grid-column: span ${r.span}${color ? `; --group: ${color}` : ""}">${r.cards.map(s => cardHTML(s, now)).join("")}</div>`
+      : cardHTML(r.cards[0], now, r.span, color);
+  }).join("");
 }
 
-function cardHTML(s, now, span) {
-  const style = span ? ` style="grid-column: span ${span}"` : "";
-  return `<div class="card ${s.status}"${style} title="${esc(s.cwd)}" draggable="true" data-id="${esc(s.id)}" data-slot="${s.slot}">
+// cardHTML draws one agent; span and color are set for a card that stands on
+// its own in the grid (color when it's part of a group cut across rows).
+function cardHTML(s, now, span, color) {
+  const style = [span && `grid-column: span ${span}`, color && `--group: ${color}`].filter(Boolean).join("; ");
+  return `<div class="card ${s.status}${color ? " tinted" : ""}"${style ? ` style="${style}"` : ""} title="${esc(s.cwd)}" draggable="true" data-id="${esc(s.id)}" data-slot="${s.slot}">
       <div class="head">${mascotSVG(s.mascot, s.status)}<span class="badge">${esc(t(`status.${s.status}`))}</span></div>
-      <p class="name">${esc(s.project)}</p>
+      <p class="name"><span>${esc(s.project)}</span></p>
       <p class="line agent" title="${esc(s.client && t(`client.${s.client}`) !== `client.${s.client}` ? t("runsIn", { client: t(`client.${s.client}`) }) : "")}">${esc(agentLine(s))}</p>
       <p class="line title">${esc(s.title || t("newSession"))}</p>
       <p class="line action">${esc(actionText(s.action))}</p>
