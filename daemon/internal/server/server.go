@@ -21,13 +21,15 @@ var webFS embed.FS
 type Server struct {
 	store    *state.Store
 	settings *settings.Store
+	// open hands a link to the OS; replaced in tests.
+	open func(url string) error
 
 	mu   sync.Mutex
 	subs map[chan struct{}]struct{}
 }
 
 func New(store *state.Store, prefs *settings.Store) *Server {
-	s := &Server{store: store, settings: prefs, subs: map[chan struct{}]struct{}{}}
+	s := &Server{store: store, settings: prefs, open: openURL, subs: map[chan struct{}]struct{}{}}
 	store.OnChange(s.notify)
 	return s
 }
@@ -51,7 +53,48 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/settings", s.handleGetSettings)
 	mux.HandleFunc("PUT /api/settings", s.handlePutSettings)
 	mux.HandleFunc("POST /api/pin", s.handlePin)
+	mux.HandleFunc("POST /api/open", s.handleOpen)
 	return mux
+}
+
+// sameOrigin rejects requests sent by other web pages open in the user's
+// browser: only the simulator itself (or a client without a browser, like the
+// device) may make the daemon open things.
+func sameOrigin(r *http.Request) bool {
+	origin := r.Header.Get("Origin")
+	return origin == "" || origin == "http://"+r.Host
+}
+
+// handleOpen brings the user to an agent's session: for sessions in the Claude
+// desktop app it opens the app's claude:// link to that session. Sessions in a
+// terminal can't be opened yet.
+func (s *Server) handleOpen(w http.ResponseWriter, r *http.Request) {
+	if !sameOrigin(r) {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+	var req struct {
+		ID string `json:"id"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	hostID, ok := s.store.HostID(req.ID)
+	if !ok {
+		http.Error(w, "unknown session", http.StatusNotFound)
+		return
+	}
+	if !state.ValidHostID(hostID) {
+		http.Error(w, "this session can't be opened (not in the Claude app)", http.StatusConflict)
+		return
+	}
+	if err := s.open("claude://code/continue?session=" + hostID + "&source=aidesk"); err != nil {
+		log.Printf("open session %s: %v", shortID(req.ID), err)
+		http.Error(w, "couldn't open the session", http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // handlePin puts a session on the screen or takes it off (manual mode).

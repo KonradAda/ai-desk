@@ -10,6 +10,7 @@ import (
 
 func newTestStore() (*Store, *time.Time) {
 	s := NewStore(nil)
+	s.findHost = func(string) string { return "" } // keep tests off the real ~/.claude
 	now := time.Date(2026, 10, 23, 14, 0, 0, 0, time.UTC)
 	s.now = func() time.Time { return now }
 	return s, &now

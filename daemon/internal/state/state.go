@@ -94,6 +94,10 @@ type Session struct {
 	Model         string `json:"model,omitempty"`
 	Effort        string `json:"effort,omitempty"`
 	infoCheckedAt time.Time
+	// HostID is the Claude desktop app's id for the session, used to open it
+	// from a card; empty for sessions that don't run in the app.
+	HostID        string `json:"host_id,omitempty"`
+	hostCheckedAt time.Time
 	// Slot is the card's fixed position in the order of cards (0..MaxSlots-1).
 	Slot int `json:"slot"`
 	// Pinned marks sessions the user picked for the screen. It only matters in
@@ -120,6 +124,7 @@ type Store struct {
 	now      func() time.Time
 	onChange func()
 	readInfo func(transcriptPath string) transcriptInfo
+	findHost func(sessionID string) string
 }
 
 // infoRefresh limits how often a session's transcript is checked for a new
@@ -134,7 +139,13 @@ func NewStore(layout *Layout) *Store {
 	if layout == nil {
 		layout = LoadLayout("")
 	}
-	return &Store{sessions: map[string]*Session{}, layout: layout, now: time.Now, readInfo: readTranscriptInfo}
+	return &Store{
+		sessions: map[string]*Session{},
+		layout:   layout,
+		now:      time.Now,
+		readInfo: readTranscriptInfo,
+		findHost: func(id string) string { return findHostID(SessionsDir(), id) },
+	}
 }
 
 // refreshInfo updates title, model and effort from the transcript. Values
@@ -152,6 +163,33 @@ func (s *Store) refreshInfo(sess *Session, transcriptPath string, force bool) {
 	if info.Model != "" {
 		sess.Model, sess.Effort, sess.Client = info.Model, info.Effort, info.Entrypoint
 	}
+}
+
+// refreshHost looks up the desktop app's id for a session that has none yet,
+// at most every infoRefresh (the file may appear a moment after the session starts).
+func (s *Store) refreshHost(sess *Session) {
+	now := s.now()
+	if sess.HostID != "" || now.Sub(sess.hostCheckedAt) < infoRefresh {
+		return
+	}
+	sess.hostCheckedAt = now
+	sess.HostID = s.findHost(sess.ID)
+}
+
+// HostID returns the desktop app's id for a session so a card can open it,
+// looking it up right away if it isn't known yet. ok is false for an unknown session.
+func (s *Store) HostID(id string) (hostID string, ok bool) {
+	s.mu.Lock()
+	sess, ok := s.sessions[id]
+	if ok && sess.HostID == "" {
+		sess.HostID = s.findHost(id)
+		sess.hostCheckedAt = s.now()
+	}
+	if ok {
+		hostID = sess.HostID
+	}
+	s.mu.Unlock()
+	return hostID, ok
 }
 
 // OnChange registers a callback invoked (outside the lock) after every update.
@@ -195,6 +233,7 @@ func (s *Store) apply(ev Event) {
 	sess.UpdatedAt = now
 	// A reply just ended, so check right away in case the model or effort changed.
 	s.refreshInfo(sess, ev.TranscriptPath, ev.HookEventName == "Stop")
+	s.refreshHost(sess)
 
 	switch ev.HookEventName {
 	case "UserPromptSubmit":
