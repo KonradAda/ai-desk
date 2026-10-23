@@ -104,6 +104,15 @@
   /* Two-frame animations inside the mascot (wand sparkles). */
   .mascot .fr { animation: frames .7s linear infinite; }
   @keyframes frames { 0%, 49.99% { opacity: 1 } 50%, 100% { opacity: 0 } }
+  /* Sleeping mascot: breathes, and Zs float up from the hat (3 s = SNORE in the script). */
+  .mascot .snore { animation: breathe 3s ease-in-out infinite; transform-box: fill-box; transform-origin: 50% 100%; }
+  @keyframes breathe { 0%, 100% { transform: scale(1, 1) } 50% { transform: scale(1.04, 1.08) } }
+  .mascot .zzz { opacity: 0; animation: zzz 3s linear infinite; transform-box: fill-box; transform-origin: center; }
+  @keyframes zzz {
+    0% { transform: translate(0, 0) scale(.5); opacity: 0 }
+    15% { opacity: 1 }
+    100% { transform: translate(14px, -26px) scale(1.3); opacity: 0 }
+  }
 
   .pager { display: flex; align-items: center; justify-content: center; gap: 14px; height: 28px; }
   .pager[hidden] { display: none; }
@@ -239,6 +248,8 @@ const WAND = [[10, 7, "B"], [11, 6, "B"], [12, 5, "Y"]];
 // While working, sparkles fly off the wand in two alternating frames.
 const SPARKLES = [[[11, 3], [12, 1]], [[12, 3], [10, 2], [11, 0]]];
 const MAGIC = { H: "#534AB7", Y: "#F2C14E", B: "#8A5A2B", "*": "#7FD6FF" };
+// One snore (breath in and out) takes this long; the Zzz rise to the same rhythm.
+const SNORE = 3000;
 
 function mascotSVG(index, status) {
   const color = COLORS[index % COLORS.length];
@@ -249,26 +260,35 @@ function mascotSVG(index, status) {
   // On the antenna shape the hat sits one row lower, covering the antennas.
   const hatTop = rows[0].includes("A") ? 1 : 0;
   const bodyTop = 4;
-  let rects = "";
+  // Animations are timed by the wall clock (a negative delay), so redrawing the card doesn't restart them.
+  const clock = period => -(Date.now() % period);
+  const asleep = status === "done" || status === "idle";
+
+  let body = "";
   rows.forEach((row, y) => [...row].forEach((ch, x) => {
     const py = bodyTop + y;
-    if ((ch === "X" || ch === "A") && py >= hatTop + HAT.length) rects += cell(x, py, color);
-    else if (ch === "O") rects += cell(x, py, EYE);
-    else if (ch === "-") rects += `<rect x="${x*u}" y="${py*u+u/2}" width="${u}" height="${u/2}" fill="${EYE}"/>`;
+    if ((ch === "X" || ch === "A") && py >= hatTop + HAT.length) body += cell(x, py, color);
+    else if (ch === "O") body += cell(x, py, EYE);
+    else if (ch === "-") body += `<rect x="${x*u}" y="${py*u+u/2}" width="${u}" height="${u/2}" fill="${EYE}"/>`;
   }));
   // The purple mascot would blend into the purple hat, so it gets a burgundy one.
   const hat = { ...MAGIC, H: color === "#7F77DD" ? "#993556" : MAGIC.H };
-  HAT.forEach((row, y) => [...row].forEach((ch, x) => { if (ch !== ".") rects += cell(x, hatTop + y, hat[ch]); }));
-  WAND.forEach(([x, y, ch]) => { rects += cell(x, y, MAGIC[ch]); });
+  HAT.forEach((row, y) => [...row].forEach((ch, x) => { if (ch !== ".") body += cell(x, hatTop + y, hat[ch]); }));
+
+  // A sleeping mascot snores: the body and hat swell and sink with each breath.
+  let out = asleep ? `<g class="snore" style="animation-delay:${clock(SNORE)}ms">${body}</g>` : body;
+  WAND.forEach(([x, y, ch]) => { out += cell(x, y, MAGIC[ch]); });
   if (status === "working") {
-    // Frames switch through a CSS animation timed by the wall clock, so redrawing doesn't restart it.
     const period = 700;
-    const phase = -(Date.now() % period);
-    rects += SPARKLES.map((pts, i) =>
-      `<g class="fr" style="animation-delay:${phase - (period / 2) * i}ms">${pts.map(([x, y]) => cell(x, y, MAGIC["*"])).join("")}</g>`).join("");
+    out += SPARKLES.map((pts, i) =>
+      `<g class="fr" style="animation-delay:${clock(period) - (period / 2) * i}ms">${pts.map(([x, y]) => cell(x, y, MAGIC["*"])).join("")}</g>`).join("");
   }
-  if (status === "done") rects += `<text x="64" y="12" font-size="12" fill="#a3a199" font-family="monospace">z</text>`;
-  return `<svg class="mascot" width="62" height="48" viewBox="0 0 78 60" shape-rendering="crispEdges" aria-hidden="true">${rects}</svg>`;
+  if (asleep) {
+    // Three Zs rise from the hat one after another, one per breath, growing and fading out.
+    out += [0, 1, 2].map(i =>
+      `<text class="zzz" x="58" y="26" font-size="11" font-weight="700" fill="#b4b2a9" font-family="monospace" style="animation-delay:${clock(SNORE) - (SNORE / 3) * i}ms">Z</text>`).join("");
+  }
+  return `<svg class="mascot" width="62" height="48" viewBox="0 0 78 60" shape-rendering="crispEdges" aria-hidden="true">${out}</svg>`;
 }
 
 function minutesSince(from, now) { return Math.max(0, Math.floor((now - from) / 60000)); }
