@@ -85,8 +85,15 @@ type Session struct {
 	Mascot     int `json:"mascot"`
 	// Title tells sessions of one project apart: the session title from the
 	// transcript, or the start of the first prompt until a title exists.
-	Title          string `json:"title"`
-	titleCheckedAt time.Time
+	Title string `json:"title"`
+	// Agent is which coding agent runs the session; only Claude Code for now.
+	Agent string `json:"agent"`
+	// Client is where the session runs (e.g. claude-desktop, cli), Model and
+	// Effort what it runs with, all read from the transcript.
+	Client        string `json:"client,omitempty"`
+	Model         string `json:"model,omitempty"`
+	Effort        string `json:"effort,omitempty"`
+	infoCheckedAt time.Time
 	// Slot is the card's fixed position in the order of cards (0..MaxSlots-1).
 	Slot int `json:"slot"`
 }
@@ -104,34 +111,43 @@ type Event struct {
 }
 
 type Store struct {
-	mu        sync.Mutex
-	sessions  map[string]*Session
-	layout    *Layout
-	now       func() time.Time
-	onChange  func()
-	readTitle func(transcriptPath string) string
+	mu       sync.Mutex
+	sessions map[string]*Session
+	layout   *Layout
+	now      func() time.Time
+	onChange func()
+	readInfo func(transcriptPath string) transcriptInfo
 }
 
-// titleRefresh limits how often a session's transcript is checked for a new
-// title, since hook events arrive several times per second.
-const titleRefresh = 20 * time.Second
+// infoRefresh limits how often a session's transcript is checked for a new
+// title, model or effort, since hook events arrive several times per second.
+const infoRefresh = 20 * time.Second
+
+// AgentClaudeCode identifies sessions reported by Claude Code hooks.
+const AgentClaudeCode = "claude-code"
 
 // NewStore creates a store; layout may be nil to keep slot preferences in memory only.
 func NewStore(layout *Layout) *Store {
 	if layout == nil {
 		layout = LoadLayout("")
 	}
-	return &Store{sessions: map[string]*Session{}, layout: layout, now: time.Now, readTitle: readTranscriptTitle}
+	return &Store{sessions: map[string]*Session{}, layout: layout, now: time.Now, readInfo: readTranscriptInfo}
 }
 
-func (s *Store) refreshTitle(sess *Session, transcriptPath string) {
+// refreshInfo updates title, model and effort from the transcript. Values
+// not found keep what was known, e.g. the prompt fallback for the title.
+func (s *Store) refreshInfo(sess *Session, transcriptPath string, force bool) {
 	now := s.now()
-	if transcriptPath == "" || now.Sub(sess.titleCheckedAt) < titleRefresh {
+	if transcriptPath == "" || (!force && now.Sub(sess.infoCheckedAt) < infoRefresh) {
 		return
 	}
-	sess.titleCheckedAt = now
-	if title := s.readTitle(transcriptPath); title != "" {
-		sess.Title = truncate(title, 40)
+	sess.infoCheckedAt = now
+	info := s.readInfo(transcriptPath)
+	if info.Title != "" {
+		sess.Title = truncate(info.Title, 40)
+	}
+	if info.Model != "" {
+		sess.Model, sess.Effort, sess.Client = info.Model, info.Effort, info.Entrypoint
 	}
 }
 
@@ -166,6 +182,7 @@ func (s *Store) apply(ev Event) {
 			Cwd:       ev.Cwd,
 			Status:    StatusIdle,
 			Action:    Action{Kind: ActIdle},
+			Agent:     AgentClaudeCode,
 			TurnStart: now,
 			Mascot:    s.freeMascot(project),
 			Slot:      s.pickSlot(project),
@@ -173,7 +190,8 @@ func (s *Store) apply(ev Event) {
 		s.sessions[ev.SessionID] = sess
 	}
 	sess.UpdatedAt = now
-	s.refreshTitle(sess, ev.TranscriptPath)
+	// A reply just ended, so check right away in case the model or effort changed.
+	s.refreshInfo(sess, ev.TranscriptPath, ev.HookEventName == "Stop")
 
 	switch ev.HookEventName {
 	case "UserPromptSubmit":

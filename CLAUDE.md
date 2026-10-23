@@ -35,7 +35,7 @@ docs/        notatki, decyzje, badanie rynku
 
 ## Model stanu sesji
 
-Każda sesja ma: `id` (session_id z Claude Code), `project` (nazwa katalogu z `cwd`), `status`, `action` (krótki opis bieżącej czynności, np. „Edytuje auth.ts”), `started_at`, `steps` (np. 3/7, z listy zadań agenta, jeśli jest), `mascot` (kolor i typ stworka, stały dla danego projektu).
+Każda sesja ma: `id` (session_id z Claude Code), `project` (nazwa katalogu z `cwd`), `status`, `action` (krótki opis bieżącej czynności, np. „Edytuje auth.ts”), `started_at`, `steps` (np. 3/7 plus nazwa bieżącego kroku, z listy zadań agenta: `TodoWrite` w terminalu albo `update_plan` w aplikacji desktopowej), `mascot` (kolor i typ stworka, inny dla każdej karty), `title`, `agent` (na razie zawsze `claude-code`), `model`, `effort` i `client` (np. `claude-desktop`). Tytuł, model, effort i client daemon czyta z końcówki pliku transkrypcji sesji (`transcript_path` z hooka), najwyżej co 20 s i od razu po zakończeniu odpowiedzi.
 
 Statusy: `working`, `waiting` (czeka na zgodę lub odpowiedź), `done`, `error`, `idle`.
 

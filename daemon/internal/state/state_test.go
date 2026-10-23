@@ -244,7 +244,7 @@ func TestTitleFromPromptThenTranscript(t *testing.T) {
 	s, now := newTestStore()
 	title := ""
 	reads := 0
-	s.readTitle = func(string) string { reads++; return title }
+	s.readInfo = func(string) transcriptInfo { reads++; return transcriptInfo{Title: title} }
 
 	ev := Event{SessionID: "a", Cwd: "/p", TranscriptPath: "/t.jsonl", HookEventName: "UserPromptSubmit",
 		Prompt: "Napraw logowanie w panelu admina, bo po zmianie hasła wywala błąd 500"}
@@ -260,7 +260,7 @@ func TestTitleFromPromptThenTranscript(t *testing.T) {
 		t.Fatalf("want 1 transcript read, got %d", reads)
 	}
 
-	*now = now.Add(titleRefresh)
+	*now = now.Add(infoRefresh)
 	s.Apply(Event{SessionID: "a", TranscriptPath: "/t.jsonl", HookEventName: "PreToolUse"})
 	if got := snapshot(s)[0].Title; got != "Naprawa logowania" {
 		t.Fatalf("want transcript title, got %q", got)
@@ -274,18 +274,42 @@ func TestTitleFromPromptThenTranscript(t *testing.T) {
 	}
 }
 
-func TestLastTitle(t *testing.T) {
-	data := []byte(`{"type":"user","message":"mentions \"custom-title\" in text"}
-{"type":"custom-title","customTitle":"Stary tytuł","sessionId":"x"}
-{"type":"assistant"}
-{"type":"custom-title","customTitle":"Nowy tytuł","sessionId":"x"}
+func TestParseTranscriptTail(t *testing.T) {
+	data := []byte(`{"type":"user","message":"mentions \"custom-title\" and \"type\":\"assistant\" in text"}
+{"type":"custom-title","customTitle":"Old title","sessionId":"x"}
+{"type":"assistant","message":{"model":"claude-sonnet-5-5"},"effort":"low","entrypoint":"cli"}
+{"type":"custom-title","customTitle":"New title","sessionId":"x"}
+{"type":"assistant","message":{"model":"claude-opus-5-5"},"effort":"medium","perTurnEffort":"high","entrypoint":"claude-desktop"}
+{"type":"assistant","isSidechain":true,"message":{"model":"claude-haiku-5-5"},"effort":"low"}
 {"type":"user","message":"another \"custom-title\" mention"}
 {"type":"custom-ti`) // the tail may cut a line in half
-	if got := lastTitle(data); got != "Nowy tytuł" {
-		t.Fatalf("want newest title, got %q", got)
+	got := parseTranscriptTail(data)
+	want := transcriptInfo{Title: "New title", Model: "claude-opus-5-5", Effort: "high", Entrypoint: "claude-desktop"}
+	if got != want {
+		t.Fatalf("want %+v, got %+v", want, got)
 	}
-	if got := lastTitle([]byte(`{"type":"user"}`)); got != "" {
-		t.Fatalf("want empty title, got %q", got)
+	if got := parseTranscriptTail([]byte(`{"type":"user"}`)); got != (transcriptInfo{}) {
+		t.Fatalf("want empty info, got %+v", got)
+	}
+}
+
+func TestModelAndEffortFromTranscript(t *testing.T) {
+	s, now := newTestStore()
+	info := transcriptInfo{Model: "claude-opus-5-5", Effort: "medium", Entrypoint: "claude-desktop"}
+	s.readInfo = func(string) transcriptInfo { return info }
+
+	s.Apply(Event{SessionID: "a", Cwd: "/p", TranscriptPath: "/t.jsonl", HookEventName: "UserPromptSubmit"})
+	got := snapshot(s)[0]
+	if got.Agent != AgentClaudeCode || got.Model != "claude-opus-5-5" || got.Effort != "medium" || got.Client != "claude-desktop" {
+		t.Fatalf("unexpected session info: %+v", got)
+	}
+
+	// Effort changed mid-session: Stop re-reads at once, without waiting for the refresh interval.
+	info.Effort = "high"
+	*now = now.Add(time.Second)
+	s.Apply(Event{SessionID: "a", TranscriptPath: "/t.jsonl", HookEventName: "Stop"})
+	if got := snapshot(s)[0].Effort; got != "high" {
+		t.Fatalf("want effort updated on Stop, got %q", got)
 	}
 }
 
