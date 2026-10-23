@@ -201,7 +201,7 @@ func TestMascotsUniqueOnScreen(t *testing.T) {
 		seen[sess.Mascot] = true
 	}
 
-	// A second session in the same project keeps the project's mascot.
+	// A second session in the same project still gets its own mascot.
 	s.Apply(Event{SessionID: "b", HookEventName: "SessionEnd"}) // free a slot so it is visible
 	s.Apply(Event{SessionID: "z", Cwd: "/pa", HookEventName: "SessionStart"})
 	var first, second int
@@ -213,8 +213,57 @@ func TestMascotsUniqueOnScreen(t *testing.T) {
 			second = sess.Mascot
 		}
 	}
-	if first != second {
-		t.Fatalf("same project should share mascot: %d vs %d", first, second)
+	if first == second {
+		t.Fatalf("two sessions of one project should look different, both got mascot %d", first)
+	}
+}
+
+func TestTitleFromPromptThenTranscript(t *testing.T) {
+	s, now := newTestStore()
+	title := ""
+	reads := 0
+	s.readTitle = func(string) string { reads++; return title }
+
+	ev := Event{SessionID: "a", Cwd: "/p", TranscriptPath: "/t.jsonl", HookEventName: "UserPromptSubmit",
+		Prompt: "Napraw logowanie w panelu admina, bo po zmianie hasła wywala błąd 500"}
+	s.Apply(ev)
+	if got := snapshot(s)[0].Title; got != "Napraw logowanie w panelu admina, bo po…" {
+		t.Fatalf("want prompt fallback, got %q", got)
+	}
+
+	// The transcript is not re-read on every event.
+	title = "Naprawa logowania"
+	s.Apply(Event{SessionID: "a", TranscriptPath: "/t.jsonl", HookEventName: "PreToolUse"})
+	if reads != 1 {
+		t.Fatalf("want 1 transcript read, got %d", reads)
+	}
+
+	*now = now.Add(titleRefresh)
+	s.Apply(Event{SessionID: "a", TranscriptPath: "/t.jsonl", HookEventName: "PreToolUse"})
+	if got := snapshot(s)[0].Title; got != "Naprawa logowania" {
+		t.Fatalf("want transcript title, got %q", got)
+	}
+
+	// A later prompt doesn't replace an existing title.
+	*now = now.Add(time.Second)
+	s.Apply(Event{SessionID: "a", HookEventName: "UserPromptSubmit", Prompt: "a teraz testy"})
+	if got := snapshot(s)[0].Title; got != "Naprawa logowania" {
+		t.Fatalf("title should stay, got %q", got)
+	}
+}
+
+func TestLastTitle(t *testing.T) {
+	data := []byte(`{"type":"user","message":"mentions \"custom-title\" in text"}
+{"type":"custom-title","customTitle":"Stary tytuł","sessionId":"x"}
+{"type":"assistant"}
+{"type":"custom-title","customTitle":"Nowy tytuł","sessionId":"x"}
+{"type":"user","message":"another \"custom-title\" mention"}
+{"type":"custom-ti`) // the tail may cut a line in half
+	if got := lastTitle(data); got != "Nowy tytuł" {
+		t.Fatalf("want newest title, got %q", got)
+	}
+	if got := lastTitle([]byte(`{"type":"user"}`)); got != "" {
+		t.Fatalf("want empty title, got %q", got)
 	}
 }
 

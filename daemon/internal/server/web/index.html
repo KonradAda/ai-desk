@@ -40,6 +40,7 @@
   .name { font-size: 17px; font-weight: 600; margin: 4px 0 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .line { font-size: 13px; color: var(--muted); margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .action { color: var(--text); }
+  .title { font-style: italic; margin-top: -4px; }
   .empty { grid-column: 1 / -1; grid-row: 1 / -1; display: flex; flex-direction: column; align-items: center; justify-content: center;
            gap: 12px; color: var(--muted); font-size: 15px; }
   .slot { border: 1px dashed var(--card-border); border-radius: 12px; }
@@ -128,6 +129,7 @@ function render() {
     html += `<div class="card ${s.status}" title="${esc(s.cwd)}" draggable="true" data-id="${esc(s.id)}" data-slot="${slot}">
       <div class="head">${mascotSVG(s.mascot, s.status)}<span class="badge">${LABELS[s.status] || s.status}</span></div>
       <p class="name">${esc(s.project)}</p>
+      <p class="line title">${esc(s.title || "Nowa sesja")}</p>
       <p class="line action">${esc(s.action)}</p>
       <p class="line">${esc(meta)}</p>
     </div>`;

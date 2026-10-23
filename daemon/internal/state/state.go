@@ -48,6 +48,10 @@ type Session struct {
 	UpdatedAt  time.Time `json:"updated_at"`
 	Steps      *Steps    `json:"steps,omitempty"`
 	Mascot     int       `json:"mascot"`
+	// Title tells sessions of one project apart: the session title from the
+	// transcript, or the start of the first prompt until a title exists.
+	Title          string `json:"title"`
+	titleCheckedAt time.Time
 	// Slot is the fixed card position on screen (0..MaxCards-1), or -1 when
 	// all slots are taken and the session waits off screen.
 	Slot int `json:"slot"`
@@ -55,28 +59,46 @@ type Session struct {
 
 // Event is the subset of the Claude Code hook payload we use.
 type Event struct {
-	SessionID     string          `json:"session_id"`
-	Cwd           string          `json:"cwd"`
-	HookEventName string          `json:"hook_event_name"`
-	ToolName      string          `json:"tool_name"`
-	ToolInput     json.RawMessage `json:"tool_input"`
-	Message       string          `json:"message"`
+	SessionID      string          `json:"session_id"`
+	Cwd            string          `json:"cwd"`
+	TranscriptPath string          `json:"transcript_path"`
+	Prompt         string          `json:"prompt"`
+	HookEventName  string          `json:"hook_event_name"`
+	ToolName       string          `json:"tool_name"`
+	ToolInput      json.RawMessage `json:"tool_input"`
+	Message        string          `json:"message"`
 }
 
 type Store struct {
-	mu       sync.Mutex
-	sessions map[string]*Session
-	layout   *Layout
-	now      func() time.Time
-	onChange func()
+	mu        sync.Mutex
+	sessions  map[string]*Session
+	layout    *Layout
+	now       func() time.Time
+	onChange  func()
+	readTitle func(transcriptPath string) string
 }
+
+// titleRefresh limits how often a session's transcript is checked for a new
+// title, since hook events arrive several times per second.
+const titleRefresh = 20 * time.Second
 
 // NewStore creates a store; layout may be nil to keep slot preferences in memory only.
 func NewStore(layout *Layout) *Store {
 	if layout == nil {
 		layout = LoadLayout("")
 	}
-	return &Store{sessions: map[string]*Session{}, layout: layout, now: time.Now}
+	return &Store{sessions: map[string]*Session{}, layout: layout, now: time.Now, readTitle: readTranscriptTitle}
+}
+
+func (s *Store) refreshTitle(sess *Session, transcriptPath string) {
+	now := s.now()
+	if transcriptPath == "" || now.Sub(sess.titleCheckedAt) < titleRefresh {
+		return
+	}
+	sess.titleCheckedAt = now
+	if title := s.readTitle(transcriptPath); title != "" {
+		sess.Title = truncate(title, 40)
+	}
 }
 
 // OnChange registers a callback invoked (outside the lock) after every update.
@@ -118,6 +140,7 @@ func (s *Store) apply(ev Event) {
 		s.sessions[ev.SessionID] = sess
 	}
 	sess.UpdatedAt = now
+	s.refreshTitle(sess, ev.TranscriptPath)
 
 	switch ev.HookEventName {
 	case "UserPromptSubmit":
@@ -125,6 +148,9 @@ func (s *Store) apply(ev Event) {
 		sess.Action = "Myśli…"
 		sess.TurnStart = now
 		sess.FinishedAt = time.Time{}
+		if sess.Title == "" {
+			sess.Title = truncate(ev.Prompt, 40)
+		}
 	case "PreToolUse":
 		sess.Status = StatusWorking
 		sess.Action = describeTool(ev.ToolName, ev.ToolInput)
@@ -262,14 +288,11 @@ func priority(st Status) int {
 	return 3
 }
 
-// freeMascot prefers the project's own mascot but skips ones already on screen,
-// so two cards never look the same. Sessions of the same project share a mascot.
+// freeMascot prefers the project's own mascot but skips ones already in use,
+// so two cards never look the same, even for two sessions of one project.
 func (s *Store) freeMascot(project string) int {
 	used := map[int]bool{}
 	for _, sess := range s.sessions {
-		if strings.EqualFold(sess.Project, project) {
-			return sess.Mascot
-		}
 		used[sess.Mascot] = true
 	}
 	start := mascotFor(project)
