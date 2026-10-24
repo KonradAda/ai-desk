@@ -47,15 +47,28 @@ func main() {
 }
 
 func serve(addr string) {
-	var layoutPath, settingsPath string
+	var layoutPath, settingsPath, pinsPath, sessionsPath string
 	if dir := configDir(); dir != "" {
 		layoutPath = filepath.Join(dir, "layout.json")
 		settingsPath = filepath.Join(dir, "settings.json")
+		pinsPath = filepath.Join(dir, "pins.json")
+		sessionsPath = filepath.Join(dir, "sessions.json")
 	}
 	store := state.NewStore(state.LoadLayout(layoutPath))
+	store.UsePins(state.LoadPins(pinsPath))
+	// Bring back yesterday's cards, then mark the sessions that are running
+	// right now, without waiting for their next hook event.
+	store.UseSessionsFile(sessionsPath)
+	store.RestoreRunning(state.SessionsDir())
+	store.PruneDeleted()
 	go func() {
-		for range time.Tick(2 * time.Second) {
+		for i := 0; ; i++ {
 			store.CheckInterrupts()
+			store.SaveSessions()
+			if i%15 == 0 { // every 30 s
+				store.PruneDeleted()
+			}
+			time.Sleep(2 * time.Second)
 		}
 	}()
 	srv := server.New(store, settings.Load(settingsPath))

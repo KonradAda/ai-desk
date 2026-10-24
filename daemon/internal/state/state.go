@@ -31,10 +31,6 @@ const MascotCount = 8
 // splits them into pages, so there is no limit of one screen.
 const MaxSlots = 60
 
-// staleAfter drops sessions that have not sent any event for this long
-// (e.g. the terminal was closed without a SessionEnd event).
-const staleAfter = 3 * time.Hour
-
 // Steps summarizes the agent's task list for the progress bar.
 type Steps struct {
 	Done    int    `json:"done"`
@@ -101,6 +97,9 @@ type Session struct {
 	infoCheckedAt time.Time
 	// transcriptPath is the session's transcript, from the latest hook event.
 	transcriptPath string
+	// blocked marks a wait the agent can't get past without the user: a
+	// permission prompt, a question tool or a plan approval (see Seen).
+	blocked bool
 	// HostID is the Claude desktop app's id for the session, used to open it
 	// from a card; empty for sessions that don't run in the app.
 	HostID        string `json:"host_id,omitempty"`
@@ -134,7 +133,16 @@ type Store struct {
 	findHost func(sessionID string) string
 	// interrupted says whether a transcript ends with the user stopping a reply.
 	interrupted func(transcriptPath string) bool
+	pins        *Pins
+	// sessionsPath is the file the cards are saved in (see UseSessionsFile),
+	// lastSaved what was last written there.
+	sessionsPath string
+	lastSaved    []byte
 }
+
+// UsePins makes the store remember pins in p (by default they are kept in
+// memory only). Call it before any events arrive.
+func (s *Store) UsePins(p *Pins) { s.pins = p }
 
 // infoRefresh limits how often a session's transcript is checked for a new
 // title, model or effort, since hook events arrive several times per second.
@@ -155,6 +163,7 @@ func NewStore(layout *Layout) *Store {
 		readInfo:    readTranscriptInfo,
 		findHost:    func(id string) string { return findHostID(SessionsDir(), id) },
 		interrupted: readInterrupted,
+		pins:        LoadPins(""),
 	}
 }
 
@@ -186,6 +195,10 @@ func (s *Store) refreshHost(sess *Session) {
 	}
 	sess.hostCheckedAt = now
 	sess.HostID = s.findHost(sess.ID)
+	// A pin saved under the desktop app's id can only be matched once it's known.
+	if s.pins.has(sess.HostID) {
+		sess.Pinned = true
+	}
 }
 
 // HostID returns the desktop app's id for a session so a card can open it,
@@ -219,28 +232,45 @@ func (s *Store) Apply(ev Event) {
 	}
 }
 
+// newSession adds a session that hasn't sent anything yet: idle, with a
+// mascot and a slot of its own.
+func (s *Store) newSession(id, cwd string) *Session {
+	project := projectName(cwd)
+	sess := &Session{
+		ID:        id,
+		Project:   project,
+		Cwd:       cwd,
+		Status:    StatusIdle,
+		Action:    Action{Kind: ActIdle},
+		Agent:     AgentClaudeCode,
+		TurnStart: s.now(),
+		Mascot:    s.freeMascot(project),
+		Slot:      s.pickSlot(project),
+	}
+	s.sessions[id] = sess
+	return sess
+}
+
 func (s *Store) apply(ev Event) {
 	now := s.now()
 	if ev.HookEventName == "SessionEnd" {
-		delete(s.sessions, ev.SessionID)
+		// A closed session keeps its card (asleep) if the user talked in it;
+		// one that never got a prompt just goes away.
+		if sess, ok := s.sessions[ev.SessionID]; ok {
+			switch sess.Status {
+			case StatusIdle:
+				delete(s.sessions, ev.SessionID)
+			case StatusWorking, StatusWaiting:
+				sess.Status, sess.Action, sess.FinishedAt = StatusDone, Action{Kind: ActDone}, now
+			}
+		}
 		return
 	}
 
 	sess, ok := s.sessions[ev.SessionID]
 	if !ok {
-		project := projectName(ev.Cwd)
-		sess = &Session{
-			ID:        ev.SessionID,
-			Project:   project,
-			Cwd:       ev.Cwd,
-			Status:    StatusIdle,
-			Action:    Action{Kind: ActIdle},
-			Agent:     AgentClaudeCode,
-			TurnStart: now,
-			Mascot:    s.freeMascot(project),
-			Slot:      s.pickSlot(project),
-		}
-		s.sessions[ev.SessionID] = sess
+		sess = s.newSession(ev.SessionID, ev.Cwd)
+		sess.Pinned = s.pins.has(ev.SessionID)
 	}
 	sess.UpdatedAt = now
 	if ev.TranscriptPath != "" {
@@ -250,6 +280,7 @@ func (s *Store) apply(ev Event) {
 	info := s.refreshInfo(sess, ev.TranscriptPath, ev.HookEventName == "Stop")
 	s.refreshHost(sess)
 
+	sess.blocked = false
 	switch ev.HookEventName {
 	case "UserPromptSubmit":
 		sess.Status = StatusWorking
@@ -271,6 +302,7 @@ func (s *Store) apply(ev Event) {
 		// These tools stop and wait for the user's answer.
 		if sess.Action.Kind == ActQuestion || sess.Action.Kind == ActPlanApproval {
 			sess.Status = StatusWaiting
+			sess.blocked = true
 		}
 		if planTool(ev.ToolName) {
 			sess.applyPlan(ev.ToolName, ev.ToolInput, now)
@@ -288,6 +320,7 @@ func (s *Store) apply(ev Event) {
 		}
 		sess.Status = StatusWaiting
 		sess.Action = action
+		sess.blocked = action.Kind == ActPermission
 	case "Stop":
 		if info.Asks {
 			sess.Status = StatusWaiting
@@ -346,11 +379,7 @@ func (s *Store) Snapshot(hideDoneAfter time.Duration) []Session {
 	defer s.mu.Unlock()
 	now := s.now()
 	out := make([]Session, 0, len(s.sessions))
-	for id, sess := range s.sessions {
-		if now.Sub(sess.UpdatedAt) > staleAfter {
-			delete(s.sessions, id)
-			continue
-		}
+	for _, sess := range s.sessions {
 		if hideDoneAfter > 0 && sess.Status == StatusDone && now.Sub(sess.FinishedAt) > hideDoneAfter {
 			continue
 		}
@@ -366,6 +395,8 @@ func (s *Store) Pin(id string, pinned bool) bool {
 	sess, ok := s.sessions[id]
 	if ok {
 		sess.Pinned = pinned
+		s.pins.set(sess, pinned)
+		s.pins.save()
 	}
 	s.mu.Unlock()
 	if ok && s.onChange != nil {
@@ -380,7 +411,9 @@ func (s *Store) PinAll() {
 	s.mu.Lock()
 	for _, sess := range s.sessions {
 		sess.Pinned = true
+		s.pins.set(sess, true)
 	}
+	s.pins.save()
 	s.mu.Unlock()
 	if s.onChange != nil {
 		s.onChange()

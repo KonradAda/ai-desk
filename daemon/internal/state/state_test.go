@@ -50,9 +50,15 @@ func TestSessionLifecycle(t *testing.T) {
 		t.Fatalf("unexpected done session: %+v", got)
 	}
 
+	// Closing a session the user talked in keeps its card; one with no prompt goes away.
 	s.Apply(Event{SessionID: "a", HookEventName: "SessionEnd"})
-	if n := len(snapshot(s)); n != 0 {
-		t.Fatalf("want session removed, got %d", n)
+	if got := snapshot(s); len(got) != 1 || got[0].Status != StatusDone {
+		t.Fatalf("want the card kept asleep, got %+v", got)
+	}
+	s.Apply(Event{SessionID: "b", Cwd: cwd, HookEventName: "SessionStart"})
+	s.Apply(Event{SessionID: "b", HookEventName: "SessionEnd"})
+	if n := len(snapshot(s)); n != 1 {
+		t.Fatalf("want the unused session removed, got %d", n)
 	}
 }
 
@@ -160,7 +166,7 @@ func TestMoveSwapsAndIsRemembered(t *testing.T) {
 	}
 
 	// A new session of the same project returns to its remembered slot.
-	s.Apply(Event{SessionID: "a", HookEventName: "SessionEnd"})
+	s.Remove("a")
 	start(s, "a2", "/alpha")
 	if got := slotOf(s, "a2"); got != 5 {
 		t.Fatalf("want remembered slot 5, got %d", got)
@@ -175,7 +181,7 @@ func TestNewProjectAvoidsClaimedSlots(t *testing.T) {
 	s, _ := newTestStore()
 	start(s, "a", "/alpha")
 	s.Move("a", 0)
-	s.Apply(Event{SessionID: "a", HookEventName: "SessionEnd"})
+	s.Remove("a")
 
 	// Slot 0 is free but belongs to alpha, so a new project goes elsewhere.
 	start(s, "b", "/beta")
@@ -197,12 +203,12 @@ func TestLayoutPersists(t *testing.T) {
 	}
 }
 
-func TestStaleSessionsDropped(t *testing.T) {
+func TestOldSessionsKept(t *testing.T) {
 	s, now := newTestStore()
 	s.Apply(Event{SessionID: "a", Cwd: "/p", HookEventName: "Stop"})
-	*now = now.Add(staleAfter + time.Minute)
-	if n := len(snapshot(s)); n != 0 {
-		t.Fatalf("want stale session dropped, got %d", n)
+	*now = now.Add(48 * time.Hour)
+	if n := len(snapshot(s)); n != 1 {
+		t.Fatalf("want the card kept however long it sleeps, got %d", n)
 	}
 }
 
@@ -226,7 +232,7 @@ func TestMascotsUniqueOnScreen(t *testing.T) {
 	}
 
 	// A second session in the same project still gets its own mascot.
-	s.Apply(Event{SessionID: "b", HookEventName: "SessionEnd"}) // free a slot so it is visible
+	s.Remove("b") // free a slot so it is visible
 	s.Apply(Event{SessionID: "z", Cwd: "/pa", HookEventName: "SessionStart"})
 	var first, second int
 	for _, sess := range snapshot(s) {

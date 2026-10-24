@@ -53,6 +53,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/settings", s.handleGetSettings)
 	mux.HandleFunc("PUT /api/settings", s.handlePutSettings)
 	mux.HandleFunc("POST /api/pin", s.handlePin)
+	mux.HandleFunc("POST /api/remove", s.handleRemove)
 	mux.HandleFunc("POST /api/open", s.handleOpen)
 	return mux
 }
@@ -94,6 +95,7 @@ func (s *Server) handleOpen(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "couldn't open the session", http.StatusInternalServerError)
 		return
 	}
+	s.store.Seen(req.ID)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -117,6 +119,26 @@ func (s *Server) handlePin(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(s.settings.Get())
+}
+
+// handleRemove takes a card off the screen in auto mode (manual mode unpins instead).
+func (s *Server) handleRemove(w http.ResponseWriter, r *http.Request) {
+	if !sameOrigin(r) {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+	var req struct {
+		ID string `json:"id"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	if !s.store.Remove(req.ID) {
+		http.Error(w, "unknown session", http.StatusNotFound)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
