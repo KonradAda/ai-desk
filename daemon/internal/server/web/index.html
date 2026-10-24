@@ -12,6 +12,7 @@
     --waiting-bg: #633806; --waiting-fg: #fac775; --waiting-border: #ef9f27;
     --done-bg: #27500a; --done-fg: #c0dd97;
     --error-bg: #791f1f; --error-fg: #f7c1c1;
+    --interrupted-bg: #4a1b0c; --interrupted-fg: #f0997b;
     --idle-bg: #2c2c2a; --idle-fg: #b4b2a9;
   }
   @media (prefers-color-scheme: dark) { :root { --page: #0b0b0b; } }
@@ -55,6 +56,7 @@
   .waiting .badge { background: var(--waiting-bg); color: var(--waiting-fg); }
   .done .badge { background: var(--done-bg); color: var(--done-fg); }
   .error .badge { background: var(--error-bg); color: var(--error-fg); }
+  .interrupted .badge { background: var(--interrupted-bg); color: var(--interrupted-fg); }
   .idle .badge { background: var(--idle-bg); color: var(--idle-fg); }
   /* Single-line texts cut long values with "…"; line-height leaves room for
      descenders (g, y, ą) so overflow: hidden doesn't clip them. */
@@ -200,12 +202,12 @@
 const STRINGS = {
   en: {
     languageName: "English",
-    status: { working: "Working", waiting: "Needs you", done: "Done", error: "Error", idle: "Idle" },
+    status: { working: "Working", waiting: "Needs you", done: "Done", error: "Error", idle: "Idle", interrupted: "Interrupted" },
     action: {
       idle: "Waiting for a prompt", thinking: "Thinking…", edit: "Editing {arg}", read: "Reading {arg}",
       run: "Running: {arg}", search_code: "Searching the code", search_web: "Searching the web",
       delegate: "Delegating to a subagent", plan: "Planning steps", mcp: "Using an MCP tool", tool: "Using {arg}",
-      permission: "Asks permission: {arg}", input: "Waiting for your reply", attention: "Needs your attention", done: "Done",
+      permission: "Asks permission: {arg}", input: "Waiting for your reply", question: "Asks you a question", plan_approval: "Waiting for plan approval", attention: "Needs your attention", done: "Done", interrupted: "Stopped by you",
     },
     summary: "{working} working · {waiting} waiting · {done} done",
     newSession: "New session",
@@ -216,6 +218,7 @@ const STRINGS = {
     runsIn: "Runs in the {client}",
     justNow: "just now", minutes: "{m} min", hoursMinutes: "{h} h {m} min",
     finishedAgo: "Finished {ago} ago", finishedJustNow: "Finished just now",
+    interruptedAgo: "Stopped {ago} ago", interruptedJustNow: "Stopped just now",
     step: "Step {n}/{total}",
     empty: "No active agents. Start a Claude Code session.",
     emptyManual: "No agents on the screen. Tap + to add one.",
@@ -268,6 +271,9 @@ function metaText(s, now) {
   if (s.status === "done") {
     const m = minutesSince(new Date(s.finished_at), now);
     meta = m < 1 ? t("finishedJustNow") : t("finishedAgo", { ago: duration(m) });
+  } else if (s.status === "interrupted") {
+    const m = minutesSince(new Date(s.finished_at), now);
+    meta = m < 1 ? t("interruptedJustNow") : t("interruptedAgo", { ago: duration(m) });
   } else if (s.status !== "idle") {
     meta = duration(minutesSince(new Date(s.turn_start), now));
   }

@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"time"
 
 	"aidesk/internal/hook"
 	"aidesk/internal/server"
@@ -51,7 +52,13 @@ func serve(addr string) {
 		layoutPath = filepath.Join(dir, "layout.json")
 		settingsPath = filepath.Join(dir, "settings.json")
 	}
-	srv := server.New(state.NewStore(state.LoadLayout(layoutPath)), settings.Load(settingsPath))
+	store := state.NewStore(state.LoadLayout(layoutPath))
+	go func() {
+		for range time.Tick(2 * time.Second) {
+			store.CheckInterrupts()
+		}
+	}()
+	srv := server.New(store, settings.Load(settingsPath))
 	log.Printf("aidesk listening on http://%s", addr)
 	log.Fatal(http.ListenAndServe(addr, srv.Handler()))
 }

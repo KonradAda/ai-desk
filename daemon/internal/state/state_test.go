@@ -1,6 +1,7 @@
 package state
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -394,5 +395,126 @@ func TestNewPromptClearsUnfinishedPlan(t *testing.T) {
 	s.Apply(Event{SessionID: "a", HookEventName: "UserPromptSubmit"})
 	if st := snapshot(s)[0].Steps; st != nil {
 		t.Fatalf("new prompt should start without the old plan: %+v", st)
+	}
+}
+
+func TestLastTurnAsks(t *testing.T) {
+	const prompt = `{"type":"user","message":{"role":"user","content":"fix the bug"}}` + "\n"
+	const toolResult = `{"type":"user","message":{"role":"user","content":[{"type":"tool_result","content":"ok"}]}}` + "\n"
+	text := func(s string) string {
+		return `{"type":"assistant","message":{"content":[{"type":"text","text":` + strconvQuote(s) + `}]}}` + "\n"
+	}
+	wrapUp := func(ask string) string {
+		return `{"type":"assistant","message":{"content":[{"type":"tool_use","name":"mcp__ccd_turn__wrap_up","input":{"recap":"r","ask":` + strconvQuote(ask) + `}}]}}` + "\n"
+	}
+	cases := []struct {
+		name, data string
+		want       bool
+	}{
+		{"terminal question", prompt + text("Done. Should I commit it?"), true},
+		{"terminal question in bold", prompt + text("**Commit it?**\n"), true},
+		{"terminal statement", prompt + text("Is it fixed? Yes, all tests pass."), false},
+		{"desktop ask, closing text after it", prompt + wrapUp("Commit it?") + toolResult + text("Fixed the bug."), true},
+		{"desktop no ask beats a question mark", prompt + wrapUp("") + toolResult + text("Want more?"), false},
+		{"question from an earlier turn", text("Should I fix it?") + prompt + text("Fixed."), false},
+		{"wrap_up from an earlier turn", wrapUp("Fix it?") + toolResult + prompt + text("Fixed."), false},
+		{"subagent text ignored", prompt + text("Commit it?") + `{"type":"assistant","isSidechain":true,"message":{"content":[{"type":"text","text":"Found it."}]}}` + "\n", true},
+	}
+	for _, c := range cases {
+		if got := parseTranscriptTail([]byte(c.data)).Asks; got != c.want {
+			t.Errorf("%s: want asks=%v, got %v", c.name, c.want, got)
+		}
+	}
+}
+
+func strconvQuote(s string) string { b, _ := json.Marshal(s); return string(b) }
+
+func TestWaitingForAnswer(t *testing.T) {
+	s, _ := newTestStore()
+	info := transcriptInfo{Asks: true}
+	s.readInfo = func(string) transcriptInfo { return info }
+
+	// A turn that ends with a question waits for the user instead of being done.
+	s.Apply(Event{SessionID: "a", Cwd: "/p", TranscriptPath: "/t.jsonl", HookEventName: "Stop"})
+	if got := snapshot(s)[0]; got.Status != StatusWaiting || got.Action.Kind != ActQuestion {
+		t.Fatalf("want waiting on a question, got %+v", got)
+	}
+
+	info.Asks = false
+	s.Apply(Event{SessionID: "a", TranscriptPath: "/t.jsonl", HookEventName: "Stop"})
+	if got := snapshot(s)[0]; got.Status != StatusDone {
+		t.Fatalf("want done without a question, got %+v", got)
+	}
+	// The idle reminder a minute later doesn't turn a finished turn into a waiting one.
+	s.Apply(Event{SessionID: "a", HookEventName: "Notification", Message: "Claude is waiting for your input"})
+	if got := snapshot(s)[0]; got.Status != StatusDone {
+		t.Fatalf("want still done after the idle reminder, got %+v", got)
+	}
+
+	// Tools that ask the user wait until they are answered.
+	for tool, kind := range map[string]string{"AskUserQuestion": ActQuestion, "ExitPlanMode": ActPlanApproval} {
+		s.Apply(Event{SessionID: "a", HookEventName: "PreToolUse", ToolName: tool})
+		if got := snapshot(s)[0]; got.Status != StatusWaiting || got.Action.Kind != kind {
+			t.Fatalf("%s: want waiting, got %+v", tool, got)
+		}
+		s.Apply(Event{SessionID: "a", HookEventName: "PostToolUse", ToolName: tool})
+		if got := snapshot(s)[0]; got.Status != StatusWorking {
+			t.Fatalf("%s: want working once answered, got %+v", tool, got)
+		}
+	}
+}
+
+func TestLastEntryInterrupted(t *testing.T) {
+	const prompt = `{"type":"user","message":{"role":"user","content":"fix the bug"}}` + "\n"
+	const toolUse = `{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Bash","input":{}}]}}` + "\n"
+	const toolResult = `{"type":"user","message":{"role":"user","content":[{"type":"tool_result","content":"ok"}]}}` + "\n"
+	const stopped = `{"type":"user","message":{"role":"user","content":[{"type":"text","text":"[Request interrupted by user]"}]}}` + "\n"
+	const stoppedTool = `{"type":"user","message":{"role":"user","content":[{"type":"text","text":"[Request interrupted by user for tool use]"}]}}` + "\n"
+	const other = `{"type":"file-history-snapshot","snapshot":{}}` + "\n"
+	cases := []struct {
+		name, data string
+		want       bool
+	}{
+		{"stopped while thinking", prompt + stopped + other, true},
+		{"stopped during a tool", prompt + toolUse + toolResult + stoppedTool, true},
+		{"tool still running", prompt + toolUse, false},
+		{"tool just finished", prompt + toolUse + toolResult, false},
+		{"new prompt after a stop", prompt + stopped + prompt, false},
+	}
+	for _, c := range cases {
+		if got := lastEntryInterrupted(bytes.Split([]byte(c.data), []byte("\n"))); got != c.want {
+			t.Errorf("%s: want %v, got %v", c.name, c.want, got)
+		}
+	}
+}
+
+func TestInterruptedWhenQuiet(t *testing.T) {
+	s, now := newTestStore()
+	stopped := true
+	s.interrupted = func(string) bool { return stopped }
+
+	s.Apply(Event{SessionID: "a", Cwd: "/p", TranscriptPath: "/t.jsonl", HookEventName: "UserPromptSubmit"})
+	s.CheckInterrupts()
+	if got := snapshot(s)[0]; got.Status != StatusWorking {
+		t.Fatalf("want working while events still arrive, got %+v", got)
+	}
+
+	*now = now.Add(interruptQuiet)
+	s.CheckInterrupts()
+	if got := snapshot(s)[0]; got.Status != StatusInterrupted || got.Action.Kind != ActInterrupted || !got.FinishedAt.Equal(*now) {
+		t.Fatalf("want interrupted once quiet, got %+v", got)
+	}
+	s.Apply(Event{SessionID: "a", HookEventName: "Notification", Message: "Claude is waiting for your input"})
+	if got := snapshot(s)[0]; got.Status != StatusInterrupted {
+		t.Fatalf("want still interrupted after the idle reminder, got %+v", got)
+	}
+
+	// A new prompt starts work again; a long-running tool is quiet but not stopped.
+	s.Apply(Event{SessionID: "a", HookEventName: "UserPromptSubmit"})
+	stopped = false
+	*now = now.Add(time.Minute)
+	s.CheckInterrupts()
+	if got := snapshot(s)[0]; got.Status != StatusWorking {
+		t.Fatalf("want working during a long tool, got %+v", got)
 	}
 }

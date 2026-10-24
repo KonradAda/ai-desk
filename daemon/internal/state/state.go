@@ -20,6 +20,8 @@ const (
 	StatusWaiting Status = "waiting"
 	StatusDone    Status = "done"
 	StatusError   Status = "error"
+	// StatusInterrupted is a reply the user stopped before it finished.
+	StatusInterrupted Status = "interrupted"
 )
 
 // MascotCount is how many mascot variants the display knows about.
@@ -52,23 +54,26 @@ type Action struct {
 // Action kinds. "text" is free text written by the agent itself (e.g. the
 // description of a shell command) and is shown as is.
 const (
-	ActIdle       = "idle"
-	ActThinking   = "thinking"
-	ActEdit       = "edit"
-	ActRead       = "read"
-	ActRun        = "run"
-	ActText       = "text"
-	ActSearchCode = "search_code"
-	ActSearchWeb  = "search_web"
-	ActDelegate   = "delegate"
-	ActPlan       = "plan"
-	ActMCP        = "mcp"
-	ActTool       = "tool"
-	ActPermission = "permission"
-	ActInput      = "input"
-	ActAttention  = "attention"
-	ActNotice     = "notice"
-	ActDone       = "done"
+	ActIdle         = "idle"
+	ActThinking     = "thinking"
+	ActEdit         = "edit"
+	ActRead         = "read"
+	ActRun          = "run"
+	ActText         = "text"
+	ActSearchCode   = "search_code"
+	ActSearchWeb    = "search_web"
+	ActDelegate     = "delegate"
+	ActPlan         = "plan"
+	ActMCP          = "mcp"
+	ActTool         = "tool"
+	ActPermission   = "permission"
+	ActInput        = "input"
+	ActQuestion     = "question" // the agent asked the user something and waits for the answer
+	ActPlanApproval = "plan_approval"
+	ActAttention    = "attention"
+	ActNotice       = "notice"
+	ActDone         = "done"
+	ActInterrupted  = "interrupted"
 )
 
 type Session struct {
@@ -94,6 +99,8 @@ type Session struct {
 	Model         string `json:"model,omitempty"`
 	Effort        string `json:"effort,omitempty"`
 	infoCheckedAt time.Time
+	// transcriptPath is the session's transcript, from the latest hook event.
+	transcriptPath string
 	// HostID is the Claude desktop app's id for the session, used to open it
 	// from a card; empty for sessions that don't run in the app.
 	HostID        string `json:"host_id,omitempty"`
@@ -125,6 +132,8 @@ type Store struct {
 	onChange func()
 	readInfo func(transcriptPath string) transcriptInfo
 	findHost func(sessionID string) string
+	// interrupted says whether a transcript ends with the user stopping a reply.
+	interrupted func(transcriptPath string) bool
 }
 
 // infoRefresh limits how often a session's transcript is checked for a new
@@ -140,29 +149,32 @@ func NewStore(layout *Layout) *Store {
 		layout = LoadLayout("")
 	}
 	return &Store{
-		sessions: map[string]*Session{},
-		layout:   layout,
-		now:      time.Now,
-		readInfo: readTranscriptInfo,
-		findHost: func(id string) string { return findHostID(SessionsDir(), id) },
+		sessions:    map[string]*Session{},
+		layout:      layout,
+		now:         time.Now,
+		readInfo:    readTranscriptInfo,
+		findHost:    func(id string) string { return findHostID(SessionsDir(), id) },
+		interrupted: readInterrupted,
 	}
 }
 
 // refreshInfo updates title, model and effort from the transcript. Values
 // not found keep what was known, e.g. the prompt fallback for the title.
-func (s *Store) refreshInfo(sess *Session, transcriptPath string, force bool) {
+// It returns what it read, or nothing when it didn't read the transcript.
+func (s *Store) refreshInfo(sess *Session, transcriptPath string, force bool) (info transcriptInfo) {
 	now := s.now()
 	if transcriptPath == "" || (!force && now.Sub(sess.infoCheckedAt) < infoRefresh) {
-		return
+		return info
 	}
 	sess.infoCheckedAt = now
-	info := s.readInfo(transcriptPath)
+	info = s.readInfo(transcriptPath)
 	if info.Title != "" {
 		sess.Title = truncate(info.Title, 40)
 	}
 	if info.Model != "" {
 		sess.Model, sess.Effort, sess.Client = info.Model, info.Effort, info.Entrypoint
 	}
+	return info
 }
 
 // refreshHost looks up the desktop app's id for a session that has none yet,
@@ -231,8 +243,11 @@ func (s *Store) apply(ev Event) {
 		s.sessions[ev.SessionID] = sess
 	}
 	sess.UpdatedAt = now
+	if ev.TranscriptPath != "" {
+		sess.transcriptPath = ev.TranscriptPath
+	}
 	// A reply just ended, so check right away in case the model or effort changed.
-	s.refreshInfo(sess, ev.TranscriptPath, ev.HookEventName == "Stop")
+	info := s.refreshInfo(sess, ev.TranscriptPath, ev.HookEventName == "Stop")
 	s.refreshHost(sess)
 
 	switch ev.HookEventName {
@@ -253,6 +268,10 @@ func (s *Store) apply(ev Event) {
 	case "PreToolUse":
 		sess.Status = StatusWorking
 		sess.Action = describeTool(ev.ToolName, ev.ToolInput)
+		// These tools stop and wait for the user's answer.
+		if sess.Action.Kind == ActQuestion || sess.Action.Kind == ActPlanApproval {
+			sess.Status = StatusWaiting
+		}
 		if planTool(ev.ToolName) {
 			sess.applyPlan(ev.ToolName, ev.ToolInput, now)
 		}
@@ -260,12 +279,63 @@ func (s *Store) apply(ev Event) {
 		// A tool finished, so any pending permission prompt was answered.
 		sess.Status = StatusWorking
 	case "Notification":
+		action := describeNotification(ev.Message)
+		// After a minute without a prompt Claude Code says it is waiting for
+		// input. Whether a finished turn waits for an answer was decided when
+		// it ended, so this doesn't turn a finished turn into a waiting one.
+		if action.Kind == ActInput && (sess.Status == StatusDone || sess.Status == StatusInterrupted) {
+			break
+		}
 		sess.Status = StatusWaiting
-		sess.Action = describeNotification(ev.Message)
+		sess.Action = action
 	case "Stop":
+		if info.Asks {
+			sess.Status = StatusWaiting
+			sess.Action = Action{Kind: ActQuestion}
+			break
+		}
 		sess.Status = StatusDone
 		sess.Action = Action{Kind: ActDone}
 		sess.FinishedAt = now
+	}
+}
+
+// interruptQuiet is how long a working session must go without hook events
+// before its transcript is checked for an interrupt. Agents send events
+// several times per second while they work, so a quiet one may have been stopped.
+const interruptQuiet = 3 * time.Second
+
+// CheckInterrupts marks working sessions the user has stopped. Claude Code
+// sends no hook event when the user interrupts a reply, so this looks at the
+// end of the transcript of working sessions that have gone quiet. Call it
+// every few seconds.
+func (s *Store) CheckInterrupts() {
+	s.mu.Lock()
+	quiet := map[string]string{} // session id -> transcript
+	for id, sess := range s.sessions {
+		if sess.Status == StatusWorking && sess.transcriptPath != "" && s.now().Sub(sess.UpdatedAt) >= interruptQuiet {
+			quiet[id] = sess.transcriptPath
+		}
+	}
+	s.mu.Unlock()
+
+	changed := false
+	for id, path := range quiet {
+		if !s.interrupted(path) {
+			continue
+		}
+		s.mu.Lock()
+		// A hook event may have arrived while the file was read.
+		if sess, ok := s.sessions[id]; ok && sess.Status == StatusWorking && s.now().Sub(sess.UpdatedAt) >= interruptQuiet {
+			sess.Status = StatusInterrupted
+			sess.Action = Action{Kind: ActInterrupted}
+			sess.FinishedAt = s.now()
+			changed = true
+		}
+		s.mu.Unlock()
+	}
+	if changed && s.onChange != nil {
+		s.onChange()
 	}
 }
 
@@ -434,6 +504,10 @@ func describeTool(name string, raw json.RawMessage) Action {
 		return Action{Kind: ActSearchWeb}
 	case "Task", "Agent":
 		return Action{Kind: ActDelegate}
+	case "AskUserQuestion":
+		return Action{Kind: ActQuestion}
+	case "ExitPlanMode":
+		return Action{Kind: ActPlanApproval}
 	}
 	if planTool(name) {
 		return Action{Kind: ActPlan}
