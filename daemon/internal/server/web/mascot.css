@@ -25,12 +25,12 @@ svg.mascot { flex-shrink: 0; }
   97.5% { transform: scale(1, .1) }
 }
 /* Interrupted: sulks with its nose in the air. The face sits up and to one
-   side, then turns to the other every 4 s (SWING in the script, 8 s for both
-   sides), and a "hmph" puff pops out on the side it turns to. */
+   side (how far: --sx and --sy, set per shape in the script), then turns
+   to the other every 4 s (SWING in the script, 8 s for both sides), and a "hmph" puff pops out on the side it turns to. */
 .mascot .sulk-swing { animation: sulk-swing 8s ease-in-out infinite; }
 @keyframes sulk-swing {
-  0%, 45%, 100% { transform: translate(-4px, -4px) }
-  50%, 95% { transform: translate(4px, -4px) }
+  0%, 45%, 100% { transform: translate(calc(-1 * var(--sx, 4px)), var(--sy, -4px)) }
+  50%, 95% { transform: translate(var(--sx, 4px), var(--sy, -4px)) }
 }
 .mascot .sulk-puff-l, .mascot .sulk-puff-r { opacity: 0; animation: 8s ease-out infinite; }
 .mascot .sulk-puff-l { animation-name: sulk-puff-l; }
@@ -48,9 +48,9 @@ svg.mascot { flex-shrink: 0; }
    up to the side (0.5 s = SULK_MS in the script) while the open eyes swap
    for the sulking face (or back). */
 .mascot .sulk { animation: sulk-in ease-out 1 forwards; }
-@keyframes sulk-in { from { transform: translate(0, 0) } to { transform: translate(-4px, -4px) } }
+@keyframes sulk-in { from { transform: translate(0, 0) } to { transform: translate(calc(-1 * var(--sx, 4px)), var(--sy, -4px)) } }
 .mascot .unsulk { animation: sulk-out ease-in-out 1 forwards; }
-@keyframes sulk-out { from { transform: translate(var(--from-fx, -4px), -4px) } to { transform: translate(0, 0) } }
+@keyframes sulk-out { from { transform: translate(var(--from-fx, -4px), var(--sy, -4px)) } to { transform: translate(0, 0) } }
 .mascot .swap-out { animation: swap-out step-end 1 forwards; }
 @keyframes swap-out { 0% { opacity: 1 } 40%, 100% { opacity: 0 } }
 .mascot .swap-in { opacity: 0; animation: swap-in step-end 1 forwards; }
@@ -76,3 +76,33 @@ svg.mascot.changing { animation: land .35s ease-out 1 forwards; }
   to { transform: translateY(0); opacity: 1 }
 }
 .mascot .tr { opacity: 0; animation-timing-function: step-end; animation-iteration-count: 1; animation-fill-mode: forwards; }
+/* Campfire (campfireSVG in the script): the flame layers sway and stretch out
+   of step (0.9 s = FLICKER), the glow pulses with them, embers rise and fade
+   (2.4 s = EMBER). */
+.campfire-svg .flicker-a, .campfire-svg .flicker-b, .campfire-svg .flicker-c { transform-box: fill-box; transform-origin: 50% 100%; animation: .9s ease-in-out infinite; }
+.campfire-svg .flicker-a { animation-name: flicker-a; }
+.campfire-svg .flicker-b { animation-name: flicker-b; }
+.campfire-svg .flicker-c { animation-name: flicker-c; }
+@keyframes flicker-a { 0%, 100% { transform: scale(1, 1) skewX(0) } 33% { transform: scale(.96, 1.06) skewX(3deg) } 66% { transform: scale(1.03, .95) skewX(-2deg) } }
+@keyframes flicker-b { 0%, 100% { transform: scale(1, 1) skewX(0) } 40% { transform: scale(1.04, .92) skewX(-4deg) } 75% { transform: scale(.95, 1.08) skewX(3deg) } }
+@keyframes flicker-c { 0%, 100% { transform: scale(1, 1) } 50% { transform: scale(.9, 1.12) } }
+.campfire-svg .glow { transform-box: fill-box; transform-origin: center; animation: glow .9s ease-in-out infinite; }
+@keyframes glow { 0%, 100% { opacity: .22; transform: scale(1) } 50% { opacity: .32; transform: scale(1.06) } }
+.campfire-svg .ember { opacity: 0; animation: ember 2.4s linear infinite; }
+@keyframes ember {
+  0% { transform: translate(0, 0); opacity: 0 }
+  10% { opacity: 1 }
+  100% { transform: translate(3px, -30px); opacity: 0 }
+}
+/* Between jobs (life.js): looking around once (2.4 s = LOOK_MS in life.js),
+   waving the wand at a friend (1.3 s = WAVE_MS), walking with quick hops. */
+.mascot .look { animation: look 2.4s ease-in-out 1 forwards; }
+@keyframes look {
+  0%, 10% { transform: translateX(0) }
+  25%, 45% { transform: translateX(-2.2px) }
+  60%, 85% { transform: translateX(2.2px) }
+  100% { transform: translateX(0) }
+}
+.mascot .wand-wave { transform-box: view-box; transform-origin: 55px 48px; animation: wand-wave .65s ease-in-out 2; }
+@keyframes wand-wave { 0%, 100% { transform: rotate(0) } 30% { transform: rotate(-28deg) } 70% { transform: rotate(14deg) } }
+.walking svg.mascot { animation: bob .4s ease-in-out infinite; }

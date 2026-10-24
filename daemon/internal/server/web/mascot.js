@@ -87,7 +87,8 @@ const spiral = (cx, cy, turns, step) => {
 // is centred on x 30 under the hat, the wand sticks out to the right. Each has
 // a body path, where the eyes sit (y, half the gap between them), and
 // optionally feet, extras drawn behind the body, the hat moved down (hatDy)
-// and cheeks closer to the middle (cheekX).
+// and cheeks closer to the middle (cheekX), or a sulking face that turns less
+// far to each side and up (sulk: [x, y]) so it stays on the face.
 const SHAPES = [
   { // wisp: a floating spirit with a tail curling off to the left
     eyeY: 40, gap: 8,
@@ -98,11 +99,11 @@ const SHAPES = [
     behind: c => mirrored(`<path d="M7 37 L1 21 L16 30Z" fill="${c}" stroke="${c}" stroke-width="2" stroke-linejoin="round"/>`) +
       `<path d="M8 52 Q-1 51 2 40" fill="none" stroke="${c}" stroke-width="3.5" stroke-linecap="round"/>` },
   { // frog: wide and low, the eyes on bumps either side of the hat
-    eyeY: 38, gap: 23, feet: true, hatDy: 6, cheekX: 13,
+    eyeY: 38, gap: 23, feet: true, hatDy: 6, cheekX: 13, sulk: [2, 0],
     path: "M2 50 C2 40 12 34 30 34 C48 34 58 40 58 50 C58 55 52 57 46 57 L14 57 C8 57 2 55 2 50Z",
     behind: c => mirrored(`<circle cx="7" cy="38" r="6.5" fill="${c}"/>`) },
   { // snail: a shell on its back and a long foot
-    eyeY: 41, gap: 5, cheekX: 6,
+    eyeY: 41, gap: 5, cheekX: 6, sulk: [1.5, 4],
     path: "M21 44 C21 32 24 28 30 28 C36 28 39 32 39 44 L39 52 C46 52 49 57 44 57 L5 57 C2 57 2 53 6 52 L21 52Z",
     behind: c => darker(`<circle cx="12" cy="43" r="10.5" fill="${c}"/>`, .2) +
       `<path d="${spiral(12, 43, 2.3, 1.05)}" fill="none" stroke="#000" stroke-opacity=".3" stroke-width="1.6" stroke-linecap="round"/>` },
@@ -157,7 +158,9 @@ function mascotSVG(index, status, change = null) {
     if (LIDS[eyes]) {
       const edge = y - ry + 2 * ry * LIDS[eyes];
       const half = rx * Math.sqrt(1 - ((edge - y) / ry) ** 2);
-      eye += `<rect x="${x-rx-1}" y="${y-ry-1}" width="${2*rx+2}" height="${(edge-y+ry+1).toFixed(2)}" fill="${color}"/>` +
+      // The lid is the part of the eye above its edge, so it never sticks out past the eye.
+      const big = edge > y ? 1 : 0;
+      eye += `<path d="M${(x-half).toFixed(2)} ${edge.toFixed(2)} A${rx} ${ry} 0 ${big} 1 ${(x+half).toFixed(2)} ${edge.toFixed(2)}Z" fill="${color}" stroke="${color}" stroke-width=".8"/>` +
         `<path d="M${(x-half).toFixed(2)} ${edge.toFixed(2)} L${(x+half).toFixed(2)} ${edge.toFixed(2)}" stroke="${EYE}" stroke-width="1.2" stroke-linecap="round"/>`;
     }
     return eye;
@@ -187,6 +190,10 @@ function mascotSVG(index, status, change = null) {
   const puff = side => [[7, 35, 2.2], [4.5, 30.5, 1.6], [3, 27, 1.1]].map(([cx, cy, r]) =>
     `<circle cx="${side < 0 ? cx : 60 - cx}" cy="${cy}" r="${r}" fill="#b4b2a9"/>`).join("");
 
+  // How far the sulking face turns to each side and up, for mascot.css.
+  const [sx, sy] = shape.sulk || [4, 4];
+  const sulkTo = `--sx:${sx}px;--sy:${-sy}px`;
+
   let out = SHADE;
   if (changing === "sulk" || changing === "unsulk") {
     // Into the sulk the face slides up to the left and swaps to the sulking
@@ -195,7 +202,7 @@ function mascotSVG(index, status, change = null) {
     const t = `animation-duration:${SULK_MS}ms;animation-delay:${-change.ago}ms`;
     const into = changing === "sulk";
     out += drawBody("open", open =>
-      `<g class="${changing}" style="${t};--from-fx:${change.fromFaceX ?? -4}px">` +
+      `<g class="${changing}" style="${t};${sulkTo};--from-fx:${change.fromFaceX ?? -sx}px">` +
       `<g class="${into ? "swap-out" : "swap-in"}" style="${t}">${open}</g>` +
       `<g class="${into ? "swap-in" : "swap-out"}" style="${t}">${sulkFace}</g></g>`);
   } else if (moving) {
@@ -208,11 +215,15 @@ function mascotSVG(index, status, change = null) {
     // A working mascot blinks now and then: the eyes squash shut for a moment.
     if (status === "working") {
       out += drawBody("open", e => `<g class="blink" style="animation-delay:${clock(BLINK)}ms">${e}</g>`);
+    } else if (status === "looking") {
+      // Between jobs (see life.js): it looks around for company, eyes to one
+      // side and then the other. Plays once, from when it's drawn.
+      out += drawBody("open", e => `<g class="look">${e}</g>`);
     } else if (status === "interrupted") {
       // Sulking: nose in the air, the face turns from one side to the other
       // every SWING, with a "hmph" puff on each turn. The wand is put away.
       const d = `animation-delay:${clock(2 * SWING)}ms`;
-      out += drawBody("open", () => `<g class="sulk-swing" style="${d}">${sulkFace}</g>` +
+      out += drawBody("open", () => `<g class="sulk-swing" style="${d};${sulkTo}">${sulkFace}</g>` +
         `<g class="sulk-puff-l" style="${d}">${puff(-1)}</g><g class="sulk-puff-r" style="${d}">${puff(1)}</g>`);
     } else {
       out += drawBody("open");
@@ -227,7 +238,11 @@ function mascotSVG(index, status, change = null) {
       // With each wave the mouth opens twice, as if it calls "hey, hey!".
       `<ellipse class="call" cx="30" cy="${shape.eyeY + 7}" rx="2.6" ry="2.4" fill="${EYE}" style="animation-delay:${clock(WAVE)}ms"/>`;
   } else if (!sulky) {
-    out += `<line x1="55" y1="48" x2="66" y2="34" stroke="${MAGIC.B}" stroke-width="3" stroke-linecap="round"/>` + sparkle(67, 32, 3.5, MAGIC.Y);
+    // Waving to a friend (see life.js) it swings the wand and calls "hey, hey!".
+    const wand = `<line x1="55" y1="48" x2="66" y2="34" stroke="${MAGIC.B}" stroke-width="3" stroke-linecap="round"/>` + sparkle(67, 32, 3.5, MAGIC.Y);
+    out += status === "waving"
+      ? `<g class="wand-wave">${wand}</g><ellipse class="call" cx="30" cy="${shape.eyeY + 7}" rx="2.6" ry="2.4" fill="${EYE}"/>`
+      : wand;
   }
   if (changing) {
     // Ease back from wherever the hop was when the change began.
@@ -250,4 +265,26 @@ function mascotSVG(index, status, change = null) {
   const whole = status === "working" || status === "waiting" ? clock(HOP) : null;
   const style = whole === null ? "" : ` style="animation-delay:${whole}ms"`;
   return `<svg class="mascot" width="62" height="48" viewBox="0 0 78 60" aria-hidden="true"${style}>${out}</svg>`;
+}
+
+// When agents of one project are all asleep they rest together by a campfire.
+// One flicker of the flames takes FLICKER, an ember rises over EMBER. Keep in
+// step with flicker-* and ember in mascot.css.
+const FLICKER = 900;
+const EMBER = 2400;
+
+// campfireSVG draws the fire, on the same 60-high canvas as the mascot so they
+// stand on one ground line: crossed logs, three layers of flame and embers.
+function campfireSVG() {
+  const d = period => `animation-delay:${-(Date.now() % period)}ms`;
+  const flame = (cls, color, w, top) =>
+    `<path class="${cls}" style="${d(FLICKER)}" d="M${22 - w} 52 C${22 - w} 44 ${22 - w / 3} 40 22 ${top} C${22 + w / 3} 40 ${22 + w} 44 ${22 + w} 52Z" fill="${color}"/>`;
+  return `<svg class="campfire-svg" width="44" height="60" viewBox="0 0 44 60" aria-hidden="true">` +
+    `<ellipse class="glow" style="${d(FLICKER)}" cx="22" cy="55" rx="21" ry="4" fill="#F2A03D" opacity=".25"/>` +
+    flame("flicker-a", "#E8572A", 10, 24) + flame("flicker-b", "#F59A3A", 7, 32) + flame("flicker-c", "#FCE38A", 3.5, 41) +
+    `<rect x="7" y="50" width="30" height="5" rx="2.5" fill="#7A4A23" transform="rotate(12 22 52)"/>` +
+    `<rect x="7" y="50" width="30" height="5" rx="2.5" fill="#8A5A2B" transform="rotate(-12 22 52)"/>` +
+    [[18, 0], [25, EMBER / 3], [21, EMBER * 2 / 3]].map(([x, off]) =>
+      `<circle class="ember" style="animation-delay:${-((Date.now() + off) % EMBER)}ms" cx="${x}" cy="36" r="1.2" fill="#FCE38A"/>`).join("") +
+    `</svg>`;
 }

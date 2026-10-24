@@ -46,6 +46,22 @@
   .group.tinted, .card.tinted { background: color-mix(in srgb, var(--group) 11%, var(--card)); border-color: color-mix(in srgb, var(--group) 35%, var(--card-border)); }
   .group.tinted .card + .card { border-left-color: color-mix(in srgb, var(--group) 30%, var(--card-border)); }
   .tinted .name .proj { background: color-mix(in srgb, var(--group) 55%, var(--card)); padding: 0 8px; border-radius: 6px; }
+  /* The mascots live on a stage over the cards (see tickStage): each stands
+     at its card's home spot or walks to its group's campfire. While one is
+     away its card hides the badge and moves × to the outer corner. */
+  .group { position: relative; }
+  .stage { position: absolute; inset: 0; pointer-events: none; }
+  .stage[hidden] { display: none; }
+  .actor, .fire { position: absolute; top: 0; left: 0; }
+  .actor svg.mascot, .fire svg { display: block; }
+  .fire > svg { transform: scale(.15); opacity: 0; transform-origin: 50% 90%; transition: transform 1.2s ease-in, opacity 1.2s ease-in; }
+  .fire.lit > svg { transform: scale(1); opacity: 1; transition: transform .8s ease-out, opacity .5s ease-out; }
+  .fire::before { content: ""; position: absolute; inset: -40% -160%; z-index: -1; opacity: 0; transition: opacity 1.2s;
+                  background: radial-gradient(closest-side, rgba(242, 160, 61, .13), transparent); }
+  .fire.lit::before { opacity: 1; }
+  .home-spot { visibility: hidden; }
+  .card.camp .badge { display: none; }
+  .card.camp-l .head { flex-direction: row-reverse; }
   .group .card { flex: 1 1 0; border: 0; border-radius: 0; background: none; }
   .group .card + .card { border-left: 1px solid var(--card-border); }
   .group .card.waiting { border: 0; box-shadow: inset 0 0 0 2px var(--waiting-border); }
@@ -160,6 +176,7 @@
     </span>
   </div>
   <div class="grid" id="grid"></div>
+  <div class="stage" id="stage"></div>
   <div class="pager" id="pager" hidden>
     <button class="arrow" id="prev" data-i18n-label="previousPage">‹</button>
     <div class="dots" id="dots"></div>
@@ -197,6 +214,7 @@
 </div></div></div>
 
 <script src="mascot.js"></script>
+<script src="life.js"></script>
 <script>
 // All display text lives here. To add a language, add another entry with the
 // same keys (and its code to settings.Languages in the daemon).
@@ -355,14 +373,15 @@ function groupColors(sessions) {
 
 // splitRows picks how many cards go in the top row: a split that keeps every
 // project's group whole, as even as possible (top row bigger on a tie), with
-// at most 4 cards per row. If none exists, the group is cut and its color
-// shows the two parts belong together.
+// at most 3 cards per row (2x3 is the most the screen shows). If none exists,
+// the rows are split evenly, the group is cut and its color shows the two
+// parts belong together.
 function splitRows(sessions) {
   const n = sessions.length;
   const cuts = i => sessions[i - 1].project === sessions[i].project;
   let best = null;
   for (let top = 1; top < n; top++) {
-    if (cuts(top) || top > 4 || n - top > 4) continue;
+    if (cuts(top) || top > 3 || n - top > 3) continue;
     if (best === null || Math.abs(top - n / 2) < Math.abs(best - n / 2) ||
         (Math.abs(top - n / 2) === Math.abs(best - n / 2) && top > best)) best = top;
   }
@@ -442,6 +461,9 @@ function render() {
       ? `<div class="group${color ? " tinted" : ""}" style="grid-column: span ${r.span}${color ? `; --group: ${color}` : ""}">${r.cards.map(s => cardHTML(s, now)).join("")}</div>`
       : cardHTML(r.cards[0], now, r.span, color);
   }).join("");
+  stageRuns = runs.map(r => ({ key: `${r.row}/${r.project}`, sessions: r.cards }));
+  measureStage();
+  tickStage();
 }
 
 // nameHTML is the card heading: the project, then after a slash the session's title.
@@ -450,11 +472,12 @@ function nameHTML(s) {
 }
 
 // cardHTML draws one agent; span and color are set for a card that stands on
-// its own in the grid (color when it's part of a group cut across rows).
+// its own in the grid (color when it's part of a group cut across rows). Its
+// mascot lives on the stage; the card only keeps its place (home-spot).
 function cardHTML(s, now, span, color) {
   const style = [span && `grid-column: span ${span}`, color && `--group: ${color}`].filter(Boolean).join("; ");
   return `<div class="card ${s.status}${color ? " tinted" : ""}"${style ? ` style="${style}"` : ""} title="${esc(s.host_id ? t("openInClaude") : s.cwd)}" draggable="true" data-id="${esc(s.id)}" data-slot="${s.slot}"${s.host_id ? " data-open" : ""}>
-      <div class="head">${mascotSVG(s.mascot, s.status, changed[s.id] && { ...changed[s.id], ago: Date.now() - changed[s.id].at })}<span class="head-right"><span class="badge">${esc(t(`status.${s.status}`))}</span><button class="remove" data-remove="${esc(s.id)}" aria-label="${esc(t("removeAgent"))}" title="${esc(t("removeAgent"))}">×</button></span></div>
+      <div class="head"><svg class="mascot home-spot" width="62" height="48" viewBox="0 0 78 60" aria-hidden="true"></svg><span class="head-right"><span class="badge">${esc(t(`status.${s.status}`))}</span><button class="remove" data-remove="${esc(s.id)}" aria-label="${esc(t("removeAgent"))}" title="${esc(t("removeAgent"))}">×</button></span></div>
       ${nameHTML(s)}
       <p class="line agent" title="${esc(s.client && t(`client.${s.client}`) !== `client.${s.client}` ? t("runsIn", { client: t(`client.${s.client}`) }) : "")}">${esc(agentLine(s))}</p>
       <p class="line action">${esc(actionText(s.action))}</p>
@@ -465,6 +488,145 @@ function cardHTML(s, now, span, color) {
       </div>
     </div>`;
 }
+
+// The stage: a layer over the cards where the mascots live. Each one stands
+// at its card's home spot, or walks to the group's campfire and back, as its
+// life between jobs (life.js) goes. Mascots and fires are kept from one
+// update to the next, so they move and animate smoothly.
+const stage = document.getElementById("stage");
+const life = {}; // session id -> { phase, at, walkMs }, see life.js
+let stageRuns = []; // the groups on the page: [{ key, sessions }]
+let homes = {}; // session id -> { x, y, w, h } of its card's home spot, in screen px
+
+// measureStage reads where every card's mascot belongs, after the cards are drawn.
+function measureStage() {
+  const box = document.getElementById("native").getBoundingClientRect();
+  const scale = box.width / 800;
+  const at = r => ({ x: (r.left - box.left) / scale, y: (r.top - box.top) / scale, w: r.width / scale, h: r.height / scale });
+  homes = {};
+  grid.querySelectorAll(".card").forEach(card => {
+    homes[card.dataset.id] = at(card.querySelector(".home-spot").getBoundingClientRect());
+  });
+}
+
+// campSpots places the group's fire halfway between the first and the last
+// mascot by it, so they meet in the middle, and the mascots on either side of
+// it, half of them on each side. Returns { fire: { x, y, h }, spots: id -> { x, y }, sides: id -> "l" | "r" }.
+function campSpots(campers) {
+  const first = homes[campers[0].id], h = first.h, w = first.w;
+  const bodyX = w * 30 / 78; // the body's middle on the mascot's canvas
+  const fireX = (first.x + homes[campers[campers.length - 1].id].x) / 2 + bodyX;
+  const fireW = h * 44 / 60;
+  const left = Math.ceil(campers.length / 2);
+  const spots = {}, sides = {};
+  campers.forEach((s, i) => {
+    const out = i < left ? left - 1 - i : i - left; // how many sit between it and the fire
+    const body = i < left ? fireX - fireW / 2 - w * .42 - out * w * .75 : fireX + fireW / 2 + w * .4 + out * w * .75;
+    spots[s.id] = { x: body - bodyX, y: first.y };
+    sides[s.id] = i < left ? "l" : "r";
+  });
+  return { fire: { x: fireX - fireW / 2, y: first.y, h }, spots, sides };
+}
+
+// actorLook says how to draw a mascot in its phase: [status for mascotSVG,
+// change, key]; the mascot is redrawn only when the key changes.
+function actorLook(s, e, now) {
+  const ago = now - e.at;
+  switch (e.phase) {
+    case "look": return ["looking", null, `look${e.at}`];
+    case "wave": return ["waving", null, `wave${e.at}`];
+    case "rouse": return ["walking", { kind: "wake", ago }, `rouse${e.at}`];
+    case "out": case "back": return ["walking", null, "walk"];
+    case "doze": case "settle": return ["done", { kind: "sleep", ago }, `doze${e.at}`];
+    case "sleep": case "camp": return ["done", null, "sleep"];
+  }
+  // A change (waking up, a sulk) plays while it lasts, then the usual animation.
+  const c = changed[s.id], playing = c && now - c.at < changeMs(c.kind);
+  return [s.status, playing && { ...c, ago: now - c.at }, `${s.status}${playing ? c.at : ""}`];
+}
+
+const AWAY = ["out", "settle", "camp"]; // phases spent at the fire, or on the way there
+
+function tickStage() {
+  if (dragId) return;
+  const now = Date.now();
+  stepLife(life, stageRuns, now);
+  const seen = new Set(), fires = new Set();
+  for (const run of stageRuns) {
+    const campers = run.sessions.filter(s => homes[s.id] && CAMPING.includes(life[s.id].phase));
+    const camp = campers.length ? campSpots(campers) : null;
+    for (const s of run.sessions) {
+      const home = homes[s.id];
+      if (!home) continue;
+      const e = life[s.id];
+      seen.add(s.id);
+      let el = stage.querySelector(`.actor[data-id="${CSS.escape(s.id)}"]`);
+      const fresh = !el;
+      if (fresh) {
+        el = document.createElement("div");
+        el.className = "actor";
+        el.dataset.id = s.id;
+        stage.appendChild(el);
+      }
+      // Draw it anew only when how it looks changes.
+      const [status, change, key] = actorLook(s, e, now);
+      if (el.dataset.key !== key) {
+        el.dataset.key = key;
+        el.className = `actor ${status}`;
+        el.innerHTML = mascotSVG(s.mascot, status, change);
+      }
+      const svg = el.firstElementChild;
+      svg.style.width = `${home.w}px`; svg.style.height = `${home.h}px`;
+      // Where it stands, and how it gets there: walks at walking pace, a
+      // small shuffle (making room by the fire) eases, anything else (a new
+      // page or layout) jumps.
+      const to = AWAY.includes(e.phase) && camp ? camp.spots[s.id] : home;
+      const from = { x: Number(el.dataset.x), y: Number(el.dataset.y) };
+      const walking = e.phase === "out" || e.phase === "back";
+      if (fresh || from.x !== to.x || from.y !== to.y) {
+        const dist = fresh ? 0 : Math.hypot(to.x - from.x, to.y - from.y);
+        const ms = walking ? dist / WALK_SPEED : dist < 60 ? 400 : 0;
+        if (walking && e.walkMs === undefined) e.walkMs = ms;
+        el.style.transition = ms ? `transform ${ms}ms ${walking ? "linear" : "ease"}` : "none";
+        el.style.transform = `translate(${to.x}px, ${to.y}px)`;
+        el.dataset.x = to.x; el.dataset.y = to.y;
+      } else if (walking && e.walkMs === undefined) {
+        e.walkMs = 0; // already there
+      }
+      // A card whose mascot is away hides its badge and moves × to the outer corner.
+      const card = grid.querySelector(`.card[data-id="${CSS.escape(s.id)}"]`);
+      const away = AWAY.includes(e.phase) && camp ? camp.sides[s.id] : null;
+      card.classList.toggle("camp", !!away);
+      card.classList.toggle("camp-l", away === "l");
+      card.classList.toggle("camp-r", away === "r");
+    }
+    // The fire lights once someone sits by it and goes out when the last one leaves.
+    if (camp) {
+      fires.add(run.key);
+      let fire = stage.querySelector(`.fire[data-run="${CSS.escape(run.key)}"]`);
+      if (!fire) {
+        fire = document.createElement("div");
+        fire.className = "fire";
+        fire.dataset.run = run.key;
+        fire.innerHTML = campfireSVG();
+        stage.prepend(fire);
+      }
+      clearTimeout(fire.out);
+      delete fire.out;
+      const svg = fire.firstElementChild;
+      svg.style.height = `${camp.fire.h}px`; svg.style.width = `${camp.fire.h * 44 / 60}px`;
+      fire.style.transform = `translate(${camp.fire.x}px, ${camp.fire.y}px)`;
+      fire.classList.toggle("lit", campers.some(s => ["settle", "camp"].includes(life[s.id].phase)));
+    }
+  }
+  stage.querySelectorAll(".actor").forEach(el => { if (!seen.has(el.dataset.id)) el.remove(); });
+  stage.querySelectorAll(".fire").forEach(el => {
+    if (fires.has(el.dataset.run) || el.out) return;
+    el.classList.remove("lit");
+    el.out = setTimeout(() => el.remove(), 1500);
+  });
+}
+setInterval(tickStage, 100);
 
 function renderPager(pageList) {
   const pager = document.getElementById("pager");
@@ -504,13 +666,15 @@ function noteChanges() {
     const before = lastStatus[s.id];
     if (before === undefined || before === s.status) continue;
     // An interrupted agent goes into a sulk, and comes out of it when it gets
-    // back to work; otherwise only falling asleep and waking up play a change.
+    // back to work. Falling asleep is up to its life between jobs (life.js);
+    // waking up plays here when it was asleep in its card (by the fire it
+    // gets up and walks back instead).
     let kind = null;
     if (s.status === "interrupted" && !asleep(before)) kind = "sulk";
     else if (before === "interrupted" && !asleep(s.status)) kind = "unsulk";
-    else if (asleep(before) !== asleep(s.status)) kind = asleep(s.status) ? "sleep" : "wake";
+    else if (asleep(before) && !asleep(s.status) && ["sleep", "doze"].includes(life[s.id]?.phase)) kind = "wake";
     if (!kind) continue;
-    const svg = document.querySelector(`.card[data-id="${CSS.escape(s.id)}"] svg.mascot`);
+    const svg = document.querySelector(`.actor[data-id="${CSS.escape(s.id)}"] svg.mascot`);
     changed[s.id] = { kind, at: Date.now(), ...poseOf(svg) };
     setTimeout(render, changeMs(kind) + 50); // switch to the usual animation once it's over
   }
@@ -638,6 +802,7 @@ grid.addEventListener("dragstart", e => {
   if (!card) return;
   dragId = card.dataset.id;
   card.classList.add("dragging");
+  stage.hidden = true; // the mascots wait off stage while a card is dragged
   e.dataTransfer.effectAllowed = "move";
 });
 grid.addEventListener("dragover", e => {
@@ -654,7 +819,7 @@ grid.addEventListener("drop", e => {
   fetch("/api/move", { method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ id: dragId, slot: Number(target.dataset.slot) }) });
 });
-grid.addEventListener("dragend", () => { dragId = null; render(); });
+grid.addEventListener("dragend", () => { dragId = null; stage.hidden = false; render(); });
 
 // Swipe left/right with a finger to change pages, like on the device.
 let swipeX = null;

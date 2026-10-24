@@ -30,7 +30,7 @@ Potem otwórz http://127.0.0.1:7777 (ekran) i http://127.0.0.1:7777/gallery.html
 - Karty, ich miejsca i przypięcia daemon zapisuje w `sessions.json` (co 2 s, jeśli coś się zmieniło) i wczytuje przy starcie. Potem odtwarza działające sesje z `~/.claude/sessions/*.json` (tylko te, których proces żyje), więc nie czeka na ich następny hook. Przypięcia trybu ręcznego są też w `pins.json` (po id sesji z aplikacji, jeśli jest), żeby przetrwały zmianę id sesji.
 
 **Ekran (symulator, `internal/server/web`)**
-- Układ zależny od liczby agentów: 1 = cały ekran, 2 = połówki, 3–6 w dwóch rzędach. Rzędy dobierane tak, żeby nie rozcinać grup projektów.
+- Układ zależny od liczby agentów: 1 = cały ekran, 2 = połówki, 3–6 w dwóch rzędach, najwyżej 3 karty w rzędzie (max 2×3). Rzędy dobierane tak, żeby nie rozcinać grup projektów; grupę większą niż 3 rozcinamy na oba rzędy.
 - Strony przy większej liczbie agentów: kropki, strzałki, przesunięcie palcem. Kropka pulsuje na pomarańczowo, gdy ktoś na tej stronie czeka.
 - Nagłówek karty: `projekt / tytuł sesji`. Pod nim linia `Claude Code · Opus 5.5 · Medium effort`, bieżąca akcja, krok planu i czas.
 - Pasek postępu z planu: krok 1 od 10%, kroki środkowe od n/k, ostatni ok. 15% przed końcem, pełznie w trakcie kroku, a 100% dopiero gdy agent skończy.
@@ -50,6 +50,14 @@ Potem otwórz http://127.0.0.1:7777 (ekran) i http://127.0.0.1:7777/gallery.html
 - Przy pracy co 4 s mruga.
 - Budzenie (1,8 s) i zasypianie (2,4 s): powieki stopniowo, mruganie, walka ze snem. Łagodne lądowanie, jeśli zmiana złapie stworka w powietrzu.
 - Animacje liczą fazę od zegara, więc przerysowanie karty ich nie przerywa.
+
+**Życie między zadaniami (`life.js`, scena w `index.html`)**
+- Stworki żyją na osobnej warstwie nad kartami („scena”). Karta trzyma tylko puste miejsce na stworka. Dzięki temu stworki i ognisko nie są przebudowywane co 3 s razem z kartami i mogą chodzić.
+- Agent kończy pracę → budzi się w karcie i rozgląda (2,4 s). Nikogo z grupy nie ma → zasypia u siebie jak dawniej.
+- Ktoś z grupy (ten sam projekt, ten sam rząd) też jest wolny → macha do niego różdżką i woła; śpiący się budzi; obaj idą do siebie i spotykają się w połowie drogi. Ognisko rozpala się, gdy dojdzie pierwszy. Każdy przy ognisku zasypia (animacja zasypiania).
+- Ktoś przy ognisku dostaje pracę → wstaje i wraca do karty. Kto zostanie przy ognisku sam, też wraca do swojej karty i tam zasypia. Ognisko gaśnie.
+- Po otwarciu ekranu śpiący z jednej grupy od razu siedzą przy ognisku, bez animacji.
+- Logika to automat stanów bez rysowania (`stepLife`), żeby dało się ją przenieść do firmware.
 
 **Testy:** `go test ./...` w `daemon/` (stan sesji, plan, transkrypcja, układ, ustawienia, tryb ręczny przez HTTP).
 
