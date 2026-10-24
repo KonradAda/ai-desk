@@ -9,7 +9,7 @@
   h1 { font-size: 20px; font-weight: 600; margin: 0 0 4px; }
   h2 { font-size: 15px; font-weight: 600; margin: 28px 0 12px; }
   p { color: #a3a199; font-size: 13px; margin: 0; }
-  .table { display: grid; grid-template-columns: 90px repeat(5, 172px); gap: 10px; align-items: center; }
+  .table { display: grid; grid-template-columns: 90px repeat(6, 172px); gap: 10px; align-items: center; }
   .colors { display: grid; grid-template-columns: repeat(4, 172px); gap: 10px; }
   .head { font-size: 12px; color: #a3a199; text-align: center; }
   .row { font-size: 14px; text-align: right; padding-right: 6px; }
@@ -37,12 +37,13 @@ const STATES = [
   // Idle (a session with no prompt yet) looks the same as done, so it isn't shown.
   ["done", "Done: snores"],
   ["interrupted", "Interrupted: sulks"],
-  ["cycle", "Waking up and falling asleep"],
+  ["cycle:sleep", "Waking up and falling asleep"],
+  ["cycle:sulk", "Sulking and making up"],
 ];
 const NAMES = ["Wisp", "Cat", "Frog", "Snail"];
-// "cycle" isn't a status: it loops sleep, wake up, work, fall asleep (filled in below).
-const cell = (index, status) => status === "cycle"
-  ? `<div class="cell cycle" data-index="${index}"></div>`
+// "cycle:..." isn't a status: it loops one of the CYCLES below (filled in there).
+const cell = (index, status) => status.startsWith("cycle:")
+  ? `<div class="cell cycle" data-index="${index}" data-cycle="${status.slice(6)}"></div>`
   : `<div class="cell ${status}">${mascotSVG(index, status)}</div>`;
 
 let html = `<div></div>${STATES.map(([, label]) => `<div class="head">${label}</div>`).join("")}`;
@@ -52,32 +53,53 @@ NAMES.forEach((name, shape) => {
 document.getElementById("states").innerHTML = html;
 document.getElementById("colors").innerHTML = COLORS.map((_, i) => cell(i, "working")).join("");
 
-// Loop: asleep, wake up, work, fall asleep, again. Like the screen, each
-// redraw passes how long ago the last change started, so animations carry on
-// smoothly from it.
-const PHASES = [
-  ["sleep", 1000, "done", "sleep"],
-  ["wake", TRANSITIONS.wake.ms, "working", "wake"],
-  ["work", 1600, "working", "wake"],
-  ["fall", TRANSITIONS.sleep.ms, "done", "sleep"],
-];
-const LOOP = PHASES.reduce((sum, [, ms]) => sum + ms, 0);
+// Loops of changes between states. Like the screen, each redraw passes how
+// long ago the last change started, so animations carry on smoothly from it.
+// Each phase is [name, ms, status, kind of the change it's in, whether the
+// change starts with this phase].
+const CYCLES = {
+  // asleep, wake up, work, fall asleep, again
+  sleep: [
+    ["sleep", 1000, "done", "sleep"],
+    ["wake", TRANSITIONS.wake.ms, "working", "wake", true],
+    ["work", 1600, "working", "wake"],
+    ["fall", TRANSITIONS.sleep.ms, "done", "sleep", true],
+  ],
+  // work, get interrupted and sulk (a turn to each side), back to work, again
+  sulk: [
+    ["work", 1600, "working", "unsulk"],
+    ["sulk", SULK_MS, "interrupted", "sulk", true],
+    ["sulking", 2 * SWING, "interrupted", "sulk"],
+    ["unsulk", SULK_MS, "working", "unsulk", true],
+  ],
+};
+// Where in its loop each phase is, and when its change began (for a phase
+// that doesn't start a change, the last one that did, maybe in the loop before).
+for (const phases of Object.values(CYCLES)) {
+  const loop = phases.reduce((sum, [, ms]) => sum + ms, 0);
+  let at = 0;
+  phases.forEach(p => { p.at = at; at += p[1]; });
+  phases.forEach((p, i) => {
+    for (let j = i, wrap = 0; ; j--) {
+      if (j < 0) { j = phases.length - 1; wrap = loop; }
+      if (phases[j][4]) { p.changeAt = phases[j].at - wrap; break; }
+    }
+  });
+  phases.loop = loop;
+}
 setInterval(() => {
   const now = Date.now();
-  const loopStart = now - (now % LOOP);
-  let start = loopStart, phase;
-  for (const p of PHASES) { if (now < start + p[1]) { phase = p; break; } start += p[1]; }
-  const [name, , status, kind] = phase;
-  // When the current kind of change began: this phase for "wake"/"fall",
-  // the phase before it for "work"/"sleep".
-  const changeStart = name === "work" ? start - TRANSITIONS.wake.ms : name === "sleep" ? loopStart - TRANSITIONS.sleep.ms : start;
   document.querySelectorAll(".cycle").forEach(el => {
+    const phases = CYCLES[el.dataset.cycle];
+    const loopStart = now - (now % phases.loop);
+    const phase = phases.find(p => now < loopStart + p.at + p[1]);
+    const [name, , status, kind, starts] = phase;
     if (el.dataset.phase === name) return;
     el.dataset.phase = name;
     el.className = `cell cycle ${status}`;
     // Like the screen: a change eases back from the pose the mascot has right now.
-    const pose = name === "wake" || name === "fall" ? poseOf(el.querySelector("svg.mascot")) : {};
-    el.innerHTML = mascotSVG(Number(el.dataset.index), status, { kind, ago: now - changeStart, ...pose });
+    const pose = starts ? poseOf(el.querySelector("svg.mascot")) : {};
+    el.innerHTML = mascotSVG(Number(el.dataset.index), status, { kind, ago: now - (loopStart + phase.changeAt), ...pose });
   });
 }, 20);
 </script>
