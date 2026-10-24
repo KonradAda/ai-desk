@@ -33,9 +33,10 @@
 <script>
 const STATES = [
   ["working", "Working: hops, wand sparkles"],
-  ["waiting", "Needs you: pulses"],
+  ["waiting", "Needs you: waves a sign, calls"],
+  // Idle (a session with no prompt yet) looks the same as done, so it isn't shown.
   ["done", "Done: snores"],
-  ["idle", "Idle: snores"],
+  ["interrupted", "Interrupted: sulks"],
   ["cycle", "Waking up and falling asleep"],
 ];
 const NAMES = ["Wisp", "Cat", "Frog", "Snail"];

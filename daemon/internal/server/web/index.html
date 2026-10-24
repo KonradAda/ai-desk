@@ -80,20 +80,20 @@
   .size-m .bar { height: 8px; border-radius: 4px; }
   .empty { grid-column: 1 / -1; grid-row: 1 / -1; display: flex; flex-direction: column; align-items: center; justify-content: center;
            gap: 12px; color: var(--muted); font-size: 15px; }
-  /* Two rows of cards (3-6 agents) are short, so they get a smaller mascot and tighter spacing. */
+  /* Two rows of cards (3-6 agents) are short, so they get tighter spacing. */
   .rows-2 .card { padding: 9px 12px; gap: 3px; }
-  .rows-2 .head { height: 28px; }
-  .rows-2 svg.mascot { width: 36px; height: 28px; }
+  .rows-2 .head { height: 64px; }
+  .rows-2 svg.mascot { width: 84px; height: 64px; }
   /* Bigger cards (1 or 2 agents on a page) get bigger mascots and text. */
   .size-l .card { padding: 22px 28px; gap: 8px; justify-content: center; }
   .size-l .head { height: auto; }
-  .size-l svg.mascot { width: 116px; height: 89px; }
+  .size-l svg.mascot { width: 182px; height: 140px; }
   .size-l .badge { font-size: 18px; padding: 6px 16px; }
   .size-l .name { font-size: 36px; }
   .size-l .line { font-size: 20px; }
   .size-m .card { padding: 18px; gap: 10px; justify-content: center; }
   .size-m .head { height: auto; }
-  .size-m svg.mascot { width: 104px; height: 80px; }
+  .size-m svg.mascot { width: 156px; height: 120px; }
   .size-m .badge { font-size: 14px; padding: 4px 12px; }
   .size-m .name { font-size: 24px; }
   .size-m .line { font-size: 15px; }
@@ -113,6 +113,7 @@
   .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--card-border); }
   .dot.current { background: var(--text); }
   .dot.alert { background: var(--waiting-border); animation: pulse 1.1s ease-in-out infinite; }
+  @keyframes pulse { 0%, 100% { opacity: 1 } 50% { opacity: .4 } }
   .dot.alert.current { box-shadow: 0 0 0 2px var(--text); }
 
   .panel { position: absolute; inset: 0; background: var(--screen); padding: 16px 24px; display: flex; flex-direction: column; gap: 14px; }
@@ -453,7 +454,7 @@ function nameHTML(s) {
 function cardHTML(s, now, span, color) {
   const style = [span && `grid-column: span ${span}`, color && `--group: ${color}`].filter(Boolean).join("; ");
   return `<div class="card ${s.status}${color ? " tinted" : ""}"${style ? ` style="${style}"` : ""} title="${esc(s.host_id ? t("openInClaude") : s.cwd)}" draggable="true" data-id="${esc(s.id)}" data-slot="${s.slot}"${s.host_id ? " data-open" : ""}>
-      <div class="head">${mascotSVG(s.mascot, s.status, changed[s.id] && { ...changed[s.id], ago: Date.now() - changed[s.id].at })}<span class="head-right"><span class="badge">${esc(t(`status.${s.status}`))}</span>${latest.settings.session_mode === "manual" ? `<button class="remove" data-remove="${esc(s.id)}" aria-label="${esc(t("removeAgent"))}" title="${esc(t("removeAgent"))}">×</button>` : ""}</span></div>
+      <div class="head">${mascotSVG(s.mascot, s.status, changed[s.id] && { ...changed[s.id], ago: Date.now() - changed[s.id].at })}<span class="head-right"><span class="badge">${esc(t(`status.${s.status}`))}</span><button class="remove" data-remove="${esc(s.id)}" aria-label="${esc(t("removeAgent"))}" title="${esc(t("removeAgent"))}">×</button></span></div>
       ${nameHTML(s)}
       <p class="line agent" title="${esc(s.client && t(`client.${s.client}`) !== `client.${s.client}` ? t("runsIn", { client: t(`client.${s.client}`) }) : "")}">${esc(agentLine(s))}</p>
       <p class="line action">${esc(actionText(s.action))}</p>
@@ -501,11 +502,17 @@ function noteChanges() {
   const asleep = st => st === "done" || st === "idle";
   for (const s of latest.sessions) {
     const before = lastStatus[s.id];
-    if (before === undefined || asleep(before) === asleep(s.status)) continue;
-    const kind = asleep(s.status) ? "sleep" : "wake";
+    if (before === undefined || before === s.status) continue;
+    // An interrupted agent goes into a sulk, and comes out of it when it gets
+    // back to work; otherwise only falling asleep and waking up play a change.
+    let kind = null;
+    if (s.status === "interrupted" && !asleep(before)) kind = "sulk";
+    else if (before === "interrupted" && !asleep(s.status)) kind = "unsulk";
+    else if (asleep(before) !== asleep(s.status)) kind = asleep(s.status) ? "sleep" : "wake";
+    if (!kind) continue;
     const svg = document.querySelector(`.card[data-id="${CSS.escape(s.id)}"] svg.mascot`);
     changed[s.id] = { kind, at: Date.now(), ...poseOf(svg) };
-    setTimeout(render, TRANSITIONS[kind].ms + 50); // switch to the usual animation once it's over
+    setTimeout(render, changeMs(kind) + 50); // switch to the usual animation once it's over
   }
 }
 
@@ -548,6 +555,16 @@ function pin(id, pinned) {
   if (s) s.pinned = pinned; // show it right away; the daemon confirms with the next update
   render();
   fetch("/api/pin", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, pinned }) });
+}
+
+// removeCard takes a card off the screen: in manual mode it's unpinned (and
+// stays in the "+" list), in auto mode the daemon forgets it until the
+// session sends something again.
+function removeCard(id) {
+  if (latest.settings.session_mode === "manual") { pin(id, false); return; }
+  latest.sessions = (latest.sessions || []).filter(x => x.id !== id);
+  render();
+  fetch("/api/remove", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }) });
 }
 
 // renderAddButton shows "+" in manual mode, with an orange dot when an agent
@@ -608,7 +625,7 @@ document.getElementById("next").onclick = () => goToPage(page + 1);
 const grid = document.getElementById("grid");
 grid.addEventListener("click", e => {
   const b = e.target.closest("[data-remove]");
-  if (b) { pin(b.dataset.remove, false); return; }
+  if (b) { removeCard(b.dataset.remove); return; }
   // Clicking a card of a session in the Claude app opens that session there.
   const card = e.target.closest(".card[data-open]");
   if (!card) return;

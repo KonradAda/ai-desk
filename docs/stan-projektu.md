@@ -26,6 +26,8 @@ Potem otwórz http://127.0.0.1:7777 (ekran) i http://127.0.0.1:7777/gallery.html
 - Plan agenta (lista kroków) z obu narzędzi: `TodoWrite` w terminalu i `update_plan` w aplikacji desktopowej, łącznie z krótkimi aktualizacjami („następny krok”).
 - Nazwa projektu to katalog główny repozytorium git, więc agent w podkatalogu nie zmienia nazwy.
 - Bez limitu liczby sesji. Każda ma stałe miejsce (slot), a układ jest zapamiętywany per projekt w `layout.json`.
+- **Karty zostają na stałe:** sesja, w której choć raz coś napisałeś, ma kartę aż do zdjęcia jej „×” (w obu trybach) albo do usunięcia sesji w Claude (znika jej plik transkrypcji, daemon sprawdza co 30 s; Claude Code sam kasuje transkrypcje po 30 dniach). Zamknięcie terminala ani długi brak ruchu nie usuwają karty, stworek po prostu śpi.
+- Karty, ich miejsca i przypięcia daemon zapisuje w `sessions.json` (co 2 s, jeśli coś się zmieniło) i wczytuje przy starcie. Potem odtwarza działające sesje z `~/.claude/sessions/*.json` (tylko te, których proces żyje), więc nie czeka na ich następny hook. Przypięcia trybu ręcznego są też w `pins.json` (po id sesji z aplikacji, jeśli jest), żeby przetrwały zmianę id sesji.
 
 **Ekran (symulator, `internal/server/web`)**
 - Układ zależny od liczby agentów: 1 = cały ekran, 2 = połówki, 3–6 w dwóch rzędach. Rzędy dobierane tak, żeby nie rozcinać grup projektów.
@@ -42,8 +44,10 @@ Potem otwórz http://127.0.0.1:7777 (ekran) i http://127.0.0.1:7777/gallery.html
 - 4 stworki rysowane gładko (wektorowo, nie piksele): Ognik (Wisp), Kot, Żaba, Ślimak. Każdy ma inną sylwetkę (ogonek, uszy, oczy na wypukłościach, muszla), żeby agentów odróżniać na pierwszy rzut oka. 8 kolorów, każda karta na ekranie wygląda inaczej.
 - Czapka czarodzieja ze złotą gwiazdką i różdżka.
 - Pracuje: podskakuje, z różdżki lecą iskry w rytm podskoku.
-- Czeka na Ciebie: pulsuje.
+- Czeka na Ciebie: podskakuje jak przy pracy i trzyma tabliczkę z „!” zamiast różdżki. Co 6 s macha nią i woła ustami („hej, hej!”), potem spokój.
 - Skończył lub bezczynny: śpi, oddycha, „Z” lecą do góry.
+- Przerwany przez Ciebie: foch. Twarz w 0,5 s jedzie po skosie w górę i w bok (zadarty nos), oczy przymknięte od góry, podkówka, różdżka odłożona. Potem co 4 s odwraca twarz na drugą stronę z obłoczkiem „hmpf”. Po nowym poleceniu twarz płynnie wraca na środek i stworek pracuje dalej.
+- Przy pracy co 4 s mruga.
 - Budzenie (1,8 s) i zasypianie (2,4 s): powieki stopniowo, mruganie, walka ze snem. Łagodne lądowanie, jeśli zmiana złapie stworka w powietrzu.
 - Animacje liczą fazę od zegara, więc przerysowanie karty ich nie przerywa.
 
@@ -86,7 +90,9 @@ Plan wdrożenia: daemon czyta `~/.claude/sessions/*.json` i dokleja do sesji `ho
 - **Daemon trzeba uruchamiać ręcznie.** Nie ma autostartu ani ikony w zasobniku.
 - **Kliknięcie w kartę nic nie robi** (jeszcze). Droga jest zbadana, patrz „Kliknięcie w kartę: wyniki badania”.
 - **Zatwierdzanie z urządzenia** (zgoda na komendę) świadomie odłożone: każdy, kto dotknie ekranu, mógłby coś zatwierdzić.
-- **Daemon nie pamięta stanu po restarcie.** Sesje wracają przy swojej następnej akcji, a trwający plan dopiero przy pełnej liście kroków. Przypięcia trybu ręcznego też giną.
+- **Po restarcie daemona część stanu wraca dopiero z czasem.** Karty, miejsca i przypięcia wracają od razu, ale bieżąca akcja dopiero przy następnym hooku, a trwający plan dopiero przy pełnej liście kroków.
+- **Nie wiadomo jeszcze, czy usunięcie sesji w aplikacji Claude kasuje jej transkrypcję.** Jeśli nie, karta usuniętej sesji zostaje i trzeba ją zdjąć „×”. Do sprawdzenia na niepotrzebnej sesji.
+- **Daemon czyta działające sesje tylko przy starcie.** Sesja otwarta później pojawia się (albo budzi) przy swoim pierwszym hooku.
 - **Grupowanie po samej nazwie folderu:** dwa różne repozytoria o tej samej nazwie trafią do jednej grupy. Worktree z aplikacji desktopowej (`.claude/worktrees/...`) nie trafią do grupy swojego repozytorium.
 - **Strony dzielą agentów po kolei,** więc grupa może zostać rozcięta między strony, chociaż zmieściłaby się na następnej.
 - **Pole „agent” to na razie zawsze Claude Code.** Inne narzędzia (Codex, Gemini CLI) nie są obsługiwane.

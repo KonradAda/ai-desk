@@ -1,9 +1,60 @@
 /* The agent mascot, shared by the simulator and the gallery (mascot.js draws it). */
 svg.mascot { flex-shrink: 0; }
 @keyframes bob { 0%, 100% { transform: translateY(0) } 50% { transform: translateY(-4px) } }
-@keyframes pulse { 0%, 100% { opacity: 1 } 50% { opacity: .4 } }
-.working svg.mascot { animation: bob .8s ease-in-out infinite; }
-.waiting svg.mascot { animation: pulse 1.1s ease-in-out infinite; }
+.working svg.mascot, .waiting svg.mascot { animation: bob .8s ease-in-out infinite; }
+/* Needs you: the sign waves a few times, then rests until the next wave
+   (6 s = WAVE in the script; the wave itself takes about 0.9 s). It turns
+   around the hand holding the stick. */
+.mascot .sign { animation: wave 6s ease-in-out infinite; transform-box: view-box; transform-origin: 56px 50px; }
+@keyframes wave {
+  0%, 15%, 100% { transform: rotate(0) }
+  3%, 9% { transform: rotate(-14deg) }
+  6%, 12% { transform: rotate(10deg) }
+}
+/* Calling mouth: hidden, then opens twice with the wave ("hey, hey!") and closes. */
+.mascot .call { animation: call 6s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
+@keyframes call {
+  0%, 15%, 100% { transform: scale(1, 0) }
+  3%, 10% { transform: scale(1, 1) }
+  6.5% { transform: scale(1, .25) }
+}
+/* Working: a quick blink once every 4 s (BLINK in the script), about 0.2 s long. */
+.mascot .blink { animation: blink 4s linear infinite; transform-box: fill-box; transform-origin: center; }
+@keyframes blink {
+  0%, 95%, 100% { transform: scale(1, 1) }
+  97.5% { transform: scale(1, .1) }
+}
+/* Interrupted: sulks with its nose in the air. The face sits up and to one
+   side, then turns to the other every 4 s (SWING in the script, 8 s for both
+   sides), and a "hmph" puff pops out on the side it turns to. */
+.mascot .sulk-swing { animation: sulk-swing 8s ease-in-out infinite; }
+@keyframes sulk-swing {
+  0%, 45%, 100% { transform: translate(-4px, -4px) }
+  50%, 95% { transform: translate(4px, -4px) }
+}
+.mascot .sulk-puff-l, .mascot .sulk-puff-r { opacity: 0; animation: 8s ease-out infinite; }
+.mascot .sulk-puff-l { animation-name: sulk-puff-l; }
+.mascot .sulk-puff-r { animation-name: sulk-puff-r; }
+@keyframes sulk-puff-l {
+  0% { opacity: .8; transform: translate(0, 0) }
+  20%, 100% { opacity: 0; transform: translate(-3px, -5px) }
+}
+@keyframes sulk-puff-r {
+  0%, 49.9% { opacity: 0; transform: translate(0, 0) }
+  50% { opacity: .8; transform: translate(0, 0) }
+  70%, 100% { opacity: 0; transform: translate(3px, -5px) }
+}
+/* Into the sulk (and back out of it): the face slides between the middle and
+   up to the side (0.5 s = SULK_MS in the script) while the open eyes swap
+   for the sulking face (or back). */
+.mascot .sulk { animation: sulk-in ease-out 1 forwards; }
+@keyframes sulk-in { from { transform: translate(0, 0) } to { transform: translate(-4px, -4px) } }
+.mascot .unsulk { animation: sulk-out ease-in-out 1 forwards; }
+@keyframes sulk-out { from { transform: translate(var(--from-fx, -4px), -4px) } to { transform: translate(0, 0) } }
+.mascot .swap-out { animation: swap-out step-end 1 forwards; }
+@keyframes swap-out { 0% { opacity: 1 } 40%, 100% { opacity: 0 } }
+.mascot .swap-in { opacity: 0; animation: swap-in step-end 1 forwards; }
+@keyframes swap-in { 0% { opacity: 0 } 40%, 100% { opacity: 1 } }
 /* Two-frame animations inside the mascot (wand sparkles). */
 .mascot .fr { animation: frames .8s linear infinite; }
 @keyframes frames { 0%, 49.99% { opacity: 1 } 50%, 100% { opacity: 0 } }
@@ -18,7 +69,7 @@ svg.mascot { flex-shrink: 0; }
 }
 /* Changing between asleep and awake: eye frames shown in turn, played once
    (the frames and their keyframes come from TRANSITIONS in mascot.js). The
-   mascot eases back from where its hop or pulse was when the change began. */
+   mascot eases back from where its hop was when the change began. */
 svg.mascot.changing { animation: land .35s ease-out 1 forwards; }
 @keyframes land {
   from { transform: translateY(var(--from-y, 0)); opacity: var(--from-o, 1) }

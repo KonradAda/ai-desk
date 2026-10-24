@@ -8,11 +8,21 @@ const EYE = "#121211";
 const MAGIC = { H: "#534AB7", Y: "#F2C14E", B: "#8A5A2B", "*": "#7FD6FF" };
 // One snore (breath in and out) takes this long; the Zzz rise to the same rhythm.
 const SNORE = 3000;
-// One hop while working takes this long, and the wand sparkles switch frames
-// on the way up and on the way down. A pulse while waiting takes PULSE.
-// Keep in step with bob and pulse in mascot.css.
+// One hop while working or waiting takes this long, and the wand sparkles
+// switch frames on the way up and on the way down. Keep in step with bob in mascot.css.
 const HOP = 800;
-const PULSE = 1100;
+// While waiting for the user the mascot holds up a sign and waves it once
+// every WAVE, calling with its mouth. Keep in step with wave and call in mascot.css.
+const WAVE = 6000;
+// While working the mascot blinks once every BLINK. Keep in step with blink in mascot.css.
+const BLINK = 4000;
+// When the user interrupts it the mascot sulks: nose in the air, it turns its
+// face to one side and then the other, SWING ms per side. Keep in step with
+// sulk-swing and sulk-puff-* in mascot.css.
+const SWING = 4000;
+// Going into the sulk from work, and out of it back to work, slides the face
+// over this long.
+const SULK_MS = 500;
 
 // Changes between sleeping and awake play a short animation of eye frames
 // instead of jumping straight to the new state. Each frame is [eyes, ms]:
@@ -29,6 +39,9 @@ const TRANSITIONS = {
                     ["lid1", 180], ["lid2", 220], ["lid3", 280], ["line", 220], ["closed", 300]] },
 };
 for (const tr of Object.values(TRANSITIONS)) tr.ms = tr.frames.reduce((sum, [, ms]) => sum + ms, 0);
+// How long a change between states plays: one of the eye-frame transitions
+// above, or sliding into ("sulk") or out of ("unsulk") a sulk.
+const changeMs = kind => TRANSITIONS[kind] ? TRANSITIONS[kind].ms : SULK_MS;
 
 // How far down the eyelid is for each eye frame, as a share of the eye's height.
 const LIDS = { lid1: .3, lid2: .5, lid3: .7 };
@@ -100,17 +113,21 @@ const SHADE = `<defs><linearGradient id="mascot-shade" x1="0" y1="0" x2="0" y2="
   `<stop offset=".7" stop-color="#000" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity=".22"/></linearGradient></defs>`;
 
 // mascotSVG draws the mascot for an agent. change, when set, says the agent
-// went from asleep to awake (kind "wake") or back ("sleep") ago ms ago; while
-// that transition lasts the mascot plays it instead of its status animation.
-// change.fromY / change.fromOpacity, when known, are where the mascot was in
-// its hop or pulse at that moment, so it eases back from there.
-// poseOf reads where a drawn mascot is in its hop or pulse right now, so a
+// went from asleep to awake (kind "wake") or back ("sleep"), into a sulk
+// ("sulk") or out of it ("unsulk") ago ms ago; while that change lasts the
+// mascot plays it instead of its status animation. change.fromY /
+// change.fromOpacity, when known, are where the mascot was in its hop at that
+// moment, so it eases back from there, and change.fromFaceX which side its
+// face was turned to in a sulk.
+// poseOf reads where a drawn mascot is in its hop (and sulk) right now, so a
 // change that starts at this moment can ease back from there.
 function poseOf(svg) {
   if (!svg) return {};
   const st = getComputedStyle(svg);
   const m = /matrix\(([^)]+)\)/.exec(st.transform);
-  return { fromY: m ? Number(m[1].split(",")[5]) : 0, fromOpacity: Number(st.opacity) };
+  const face = svg.querySelector(".sulk-swing");
+  return { fromY: m ? Number(m[1].split(",")[5]) : 0, fromOpacity: Number(st.opacity),
+           fromFaceX: face ? new DOMMatrix(getComputedStyle(face).transform).e : undefined };
 }
 
 function mascotSVG(index, status, change = null) {
@@ -120,10 +137,13 @@ function mascotSVG(index, status, change = null) {
   // doesn't restart them. After a change the clock starts when the change
   // ends, so the hop, breathing and Zzz begin at the start of their cycle,
   // right where the change left the mascot; otherwise it's the wall clock.
-  const since = change ? Math.max(0, change.ago - TRANSITIONS[change.kind].ms) : Date.now();
+  const since = change ? Math.max(0, change.ago - changeMs(change.kind)) : Date.now();
   const clock = period => -(since % period);
   const asleep = status === "done" || status === "idle";
-  const moving = change && change.ago < TRANSITIONS[change.kind].ms ? TRANSITIONS[change.kind] : null;
+  // The change playing right now, if any; moving is set for the eye-frame ones.
+  const changing = change && change.ago < changeMs(change.kind) ? change.kind : null;
+  const moving = changing && TRANSITIONS[changing];
+  const sulky = status === "interrupted" || changing === "sulk";
   // The purple mascot would blend into the purple hat, so it gets a burgundy one.
   const hat = color === "#7F77DD" ? "#993556" : MAGIC.H;
 
@@ -143,14 +163,15 @@ function mascotSVG(index, status, change = null) {
     return eye;
   }).join("");
 
-  // drawBody draws the body with its extras, face and hat.
-  const drawBody = eyes => {
+  // drawBody draws the body with its extras, face and hat. eyesWrap, when
+  // set, wraps the eyes (e.g. in a blinking group).
+  const drawBody = (eyes, eyesWrap = e => e) => {
     const cheekX = shape.cheekX ?? shape.gap + 7;
     return (shape.feet ? [18, 36].map(x => `<rect x="${x}" y="52" width="6" height="7" rx="3" fill="${color}"/><rect x="${x}" y="52" width="6" height="7" rx="3" fill="#000" opacity=".18"/>`).join("") : "") +
       (shape.behind ? shape.behind(color) : "") +
       `<path d="${shape.path}" fill="${color}"/><path d="${shape.path}" fill="url(#mascot-shade)"/>` +
       [30 - cheekX, 30 + cheekX].map(x => `<ellipse cx="${x}" cy="${shape.eyeY+6}" rx="3.2" ry="2" fill="#fff" opacity=".18"/>`).join("") +
-      drawEyes(eyes) +
+      eyesWrap(drawEyes(eyes)) +
       `<g transform="translate(0 ${shape.hatDy || 0})">` +
       `<path d="M14 26 C21 21 25 11 36 2 C34 11 38 19 46 26Z" fill="${hat}"/>` +
       `<ellipse cx="30" cy="27" rx="22" ry="4" fill="${hat}"/>` +
@@ -158,19 +179,58 @@ function mascotSVG(index, status, change = null) {
       sparkle(31, 17, 3.5, MAGIC.Y) + `</g>`;
   };
 
+  // The sulking face: narrowed eyes and a pout. A "hmph" puff pops out on
+  // the side the face turns to (side -1 is left, 1 right).
+  const y = shape.eyeY;
+  const sulkFace = drawEyes("lid2") +
+    `<path d="M28 ${y + 6} Q30 ${y + 4.5} 32 ${y + 6}" fill="none" stroke="${EYE}" stroke-width="1.5" stroke-linecap="round"/>`;
+  const puff = side => [[7, 35, 2.2], [4.5, 30.5, 1.6], [3, 27, 1.1]].map(([cx, cy, r]) =>
+    `<circle cx="${side < 0 ? cx : 60 - cx}" cy="${cy}" r="${r}" fill="#b4b2a9"/>`).join("");
+
   let out = SHADE;
-  if (moving) {
+  if (changing === "sulk" || changing === "unsulk") {
+    // Into the sulk the face slides up to the left and swaps to the sulking
+    // face; out of it, it slides back from whichever side it was turned to
+    // and opens its eyes.
+    const t = `animation-duration:${SULK_MS}ms;animation-delay:${-change.ago}ms`;
+    const into = changing === "sulk";
+    out += drawBody("open", open =>
+      `<g class="${changing}" style="${t};--from-fx:${change.fromFaceX ?? -4}px">` +
+      `<g class="${into ? "swap-out" : "swap-in"}" style="${t}">${open}</g>` +
+      `<g class="${into ? "swap-in" : "swap-out"}" style="${t}">${sulkFace}</g></g>`);
+  } else if (moving) {
     out += moving.frames.map(([eyes], i) =>
       `<g class="tr" style="animation-name:tr-${change.kind}-${i};animation-duration:${moving.ms}ms;animation-delay:${-change.ago}ms">${drawBody(eyes)}</g>`).join("");
   } else if (asleep) {
     // A sleeping mascot snores: the body and hat swell and sink with each breath.
     out += `<g class="snore" style="animation-delay:${clock(SNORE)}ms">${drawBody("closed")}</g>`;
   } else {
-    out += drawBody("open");
+    // A working mascot blinks now and then: the eyes squash shut for a moment.
+    if (status === "working") {
+      out += drawBody("open", e => `<g class="blink" style="animation-delay:${clock(BLINK)}ms">${e}</g>`);
+    } else if (status === "interrupted") {
+      // Sulking: nose in the air, the face turns from one side to the other
+      // every SWING, with a "hmph" puff on each turn. The wand is put away.
+      const d = `animation-delay:${clock(2 * SWING)}ms`;
+      out += drawBody("open", () => `<g class="sulk-swing" style="${d}">${sulkFace}</g>` +
+        `<g class="sulk-puff-l" style="${d}">${puff(-1)}</g><g class="sulk-puff-r" style="${d}">${puff(1)}</g>`);
+    } else {
+      out += drawBody("open");
+    }
   }
-  out += `<line x1="55" y1="48" x2="66" y2="34" stroke="${MAGIC.B}" stroke-width="3" stroke-linecap="round"/>` + sparkle(67, 32, 3.5, MAGIC.Y);
-  if (moving) {
-    // Ease back from wherever the hop or pulse was when the change began.
+  if (status === "waiting" && !changing) {
+    // A sign on a stick instead of the wand, waved from where the stick is held.
+    out += `<g class="sign" style="animation-delay:${clock(WAVE)}ms">` +
+      `<line x1="56" y1="50" x2="64" y2="22" stroke="${MAGIC.B}" stroke-width="3" stroke-linecap="round"/>` +
+      `<rect x="54" y="4" width="22" height="19" rx="3" fill="#f1efe8" stroke="#000" stroke-opacity=".25" stroke-width="1.2"/>` +
+      `<text x="65" y="19.5" text-anchor="middle" font-size="16" font-weight="800" fill="${EYE}" font-family="system-ui, sans-serif">!</text></g>` +
+      // With each wave the mouth opens twice, as if it calls "hey, hey!".
+      `<ellipse class="call" cx="30" cy="${shape.eyeY + 7}" rx="2.6" ry="2.4" fill="${EYE}" style="animation-delay:${clock(WAVE)}ms"/>`;
+  } else if (!sulky) {
+    out += `<line x1="55" y1="48" x2="66" y2="34" stroke="${MAGIC.B}" stroke-width="3" stroke-linecap="round"/>` + sparkle(67, 32, 3.5, MAGIC.Y);
+  }
+  if (changing) {
+    // Ease back from wherever the hop was when the change began.
     const from = `--from-y:${change.fromY || 0}px;--from-o:${change.fromOpacity ?? 1};animation-delay:${-change.ago}ms`;
     return `<svg class="mascot changing" width="62" height="48" viewBox="0 0 78 60" aria-hidden="true" style="${from}">${out}</svg>`;
   }
@@ -185,9 +245,9 @@ function mascotSVG(index, status, change = null) {
     out += [0, 1, 2].map(i =>
       `<text class="zzz" x="58" y="26" font-size="11" font-weight="700" fill="#b4b2a9" font-family="system-ui, sans-serif" style="animation-delay:${clock(SNORE) - (SNORE / 3) * i}ms">Z</text>`).join("");
   }
-  // The hop and the pulse run on the whole mascot; timing them by the clock too
-  // keeps them smooth when the card is redrawn.
-  const whole = status === "working" ? clock(HOP) : status === "waiting" ? clock(PULSE) : null;
+  // The hop runs on the whole mascot; timing it by the clock too keeps it
+  // smooth when the card is redrawn.
+  const whole = status === "working" || status === "waiting" ? clock(HOP) : null;
   const style = whole === null ? "" : ` style="animation-delay:${whole}ms"`;
   return `<svg class="mascot" width="62" height="48" viewBox="0 0 78 60" aria-hidden="true"${style}>${out}</svg>`;
 }
