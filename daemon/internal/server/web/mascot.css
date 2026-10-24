@@ -1,5 +1,5 @@
 /* The agent mascot, shared by the simulator and the gallery (mascot.js draws it). */
-svg.mascot { image-rendering: pixelated; flex-shrink: 0; }
+svg.mascot { flex-shrink: 0; }
 @keyframes bob { 0%, 100% { transform: translateY(0) } 50% { transform: translateY(-4px) } }
 @keyframes pulse { 0%, 100% { opacity: 1 } 50% { opacity: .4 } }
 .working svg.mascot { animation: bob .8s ease-in-out infinite; }

@@ -39,7 +39,7 @@ Potem otwórz http://127.0.0.1:7777 (ekran) i http://127.0.0.1:7777/gallery.html
 - Wszystkie teksty przez słownik `STRINGS`. Na razie tylko angielski.
 
 **Stworki (`mascot.js`, `mascot.css`, `gallery.html`)**
-- 4 kształty: Kulka, Czułki, Duszek, Glut. 8 kolorów, każda karta na ekranie wygląda inaczej.
+- 4 stworki rysowane gładko (wektorowo, nie piksele): Ognik (Wisp), Kot, Żaba, Ślimak. Każdy ma inną sylwetkę (ogonek, uszy, oczy na wypukłościach, muszla), żeby agentów odróżniać na pierwszy rzut oka. 8 kolorów, każda karta na ekranie wygląda inaczej.
 - Czapka czarodzieja ze złotą gwiazdką i różdżka.
 - Pracuje: podskakuje, z różdżki lecą iskry w rytm podskoku.
 - Czeka na Ciebie: pulsuje.
@@ -90,7 +90,7 @@ Plan wdrożenia: daemon czyta `~/.claude/sessions/*.json` i dokleja do sesji `ho
 - **Grupowanie po samej nazwie folderu:** dwa różne repozytoria o tej samej nazwie trafią do jednej grupy. Worktree z aplikacji desktopowej (`.claude/worktrees/...`) nie trafią do grupy swojego repozytorium.
 - **Strony dzielą agentów po kolei,** więc grupa może zostać rozcięta między strony, chociaż zmieściłaby się na następnej.
 - **Pole „agent” to na razie zawsze Claude Code.** Inne narzędzia (Codex, Gemini CLI) nie są obsługiwane.
-- **Część animacji w symulatorze nie jest jeszcze „ESP-owa”:** płynne skalowanie „Z”, oddech przez skalowanie, przesunięcia ułamkowe, nieskalowane całkowicie rozmiary stworka (62×48 z siatki 13×10). Do zamiany na klatki przed portem na ESP32.
+- **Część animacji w symulatorze nie jest jeszcze „ESP-owa”:** płynne skalowanie „Z”, oddech przez skalowanie, przesunięcia ułamkowe, gładkie kształty SVG (na ESP32 do przerobienia na sprite'y albo rysunek w LVGL). Do zamiany na klatki przed portem na ESP32.
 - **Ścieżka do `aidesk.exe` w hookach jest na sztywno** (`C:/Projects/ai-desk/daemon/aidesk.exe`). Przy przeniesieniu projektu trzeba ponownie uruchomić `aidesk.exe hooks-config` i podmienić hooki.
 
 ## Co dalej (proponowana kolejność)

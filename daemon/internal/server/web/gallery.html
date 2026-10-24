@@ -14,7 +14,7 @@
   .head { font-size: 12px; color: #a3a199; text-align: center; }
   .row { font-size: 14px; text-align: right; padding-right: 6px; }
   .cell { background: #1f1f1d; border-radius: 10px; height: 150px; display: flex; align-items: center; justify-content: center; }
-  /* Twice the mascot's 78x60 canvas, so its pixels stay sharp. */
+  /* Twice the mascot's 78x60 canvas. */
   .cell svg.mascot { width: 156px; height: 120px; }
 </style>
 <link rel="stylesheet" href="mascot.css">
@@ -38,7 +38,7 @@ const STATES = [
   ["idle", "Idle: snores"],
   ["cycle", "Waking up and falling asleep"],
 ];
-const NAMES = ["Round", "Antennas", "Ghost", "Slime"];
+const NAMES = ["Wisp", "Cat", "Frog", "Snail"];
 // "cycle" isn't a status: it loops sleep, wake up, work, fall asleep (filled in below).
 const cell = (index, status) => status === "cycle"
   ? `<div class="cell cycle" data-index="${index}"></div>`
