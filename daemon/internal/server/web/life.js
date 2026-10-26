@@ -11,6 +11,13 @@
 //
 // At work, now and then, it puts on a little show: it always reads its
 // spellbook first, then casts one of the SPELLS (mascot.js), picked at random.
+// Rain may turn into a prank: with friends of its group asleep, it's a toss
+// of a coin whether the rain comes down on it or on some of them (how many
+// and who, at random too), who wake up soaked and cross while it laughs.
+// The gust may too: it swaps the hats of two friends asleep (picked at
+// random), or with only one asleep, that one's and its own. And the fire:
+// with friends asleep by the campfire, the fireball may come down in the
+// fire, which flares up and startles them, and it's ashamed.
 
 const LOOK_MS = 2400; // looking around after finishing; keep in step with look in mascot.css
 const WAVE_MS = 1300; // waving at a friend; keep in step with wand-wave in mascot.css
@@ -31,9 +38,20 @@ const SHOW_GAP = [5000, 20000]; // a working mascot's shows come this far apart,
 //   read    at work: reads its spellbook (READ)
 //   spell   at work: casts life[id].spell, one of the SPELLS
 // Walks last life[id].walkMs, which the screen sets from the distance.
-// Between shows life[id].nextShow says when the next one starts.
+// Between shows life[id].nextShow says when the next one starts. A rain cast
+// as a prank lists its victims in life[id].targets; a victim asleep in its
+// card or by the fire has life[id].soak = { at, by }: from at it's soaked for
+// SOAK (mascot.js), looking towards by, the prankster. A gust cast as a
+// prank keeps its hat swap in life[id].swap = { at, pair, flown } (pair the
+// two ids whose hats swap at at, flown once the screen has sent the hats
+// flying) and lasts life[id].showMs; each sleeper in the swap has
+// life[id].swap = { at, other }, the one it swaps with, for SWAP from at.
+// A fire cast as a prank keeps life[id].blaze = { at, flown } (the fireball
+// lands in the campfire at at); each one asleep by the fire then has
+// life[id].startle = { at }, startled for STARTLE from at.
 const CAMPING = ["wave", "rouse", "out", "settle", "camp"];
 const AT_FIRE = ["settle", "camp"];
+const SOAKABLE = ["sleep", "camp"]; // asleep and staying put: in its card or by the fire
 
 const isAsleep = status => status === "done" || status === "idle";
 
@@ -61,10 +79,15 @@ function stepLife(life, runs, now, serverNow) {
     const entry = s => life[s.id];
     for (const s of run.sessions) {
       const e = entry(s), since = now - e.at;
+      // A soaking lasts while it sleeps on where it is, and no longer than SOAK.
+      if (e.soak && (!isAsleep(s.status) || !SOAKABLE.includes(e.phase) || now >= e.soak.at + SOAK)) delete e.soak;
+      // So does a hat swap.
+      if (e.swap?.other && (!isAsleep(s.status) || !SOAKABLE.includes(e.phase) || now >= e.swap.at + SWAP)) delete e.swap;
+      if (e.startle && (!isAsleep(s.status) || e.phase !== "camp" || now >= e.startle.at + STARTLE)) delete e.startle;
       if (!isAsleep(s.status)) {
         // Work (or a question) calls it home: from the fire it walks back.
         if (CAMPING.includes(e.phase)) go(e, "back");
-        else if (e.phase === "read" || e.phase === "spell") stepShow(e, s, since, now);
+        else if (e.phase === "read" || e.phase === "spell") stepShow(e, s, since, now, run, life);
         else if (e.phase !== "home" && e.phase !== "back") go(e, "home");
         else if (e.phase === "back" && e.walkMs !== undefined && since >= e.walkMs) go(e, "home");
         else if (e.phase === "home") waitForShow(e, s, now);
@@ -111,17 +134,68 @@ function waitForShow(e, s, now) {
 
 // stepShow plays a show on: the spellbook, then a spell picked at random
 // (not the last one again, when there are others), then back to work. A
-// question or an interruption cuts it short.
-function stepShow(e, s, since, now) {
-  if (s.status !== "working") return Object.assign(e, { phase: "home", at: now });
+// question or an interruption cuts it short, and a prank's rain or hat swap
+// that hasn't started yet doesn't.
+function stepShow(e, s, since, now, run, life) {
+  const end = () => {
+    for (const id of e.targets || []) if (life[id]?.soak?.at > now) delete life[id].soak;
+    if (e.swap?.at > now) for (const id of e.swap.pair) if (id !== s.id && life[id]?.swap?.at === e.swap.at) delete life[id].swap;
+    if (e.blaze?.at > now) for (const f of run.sessions) if (life[f.id]?.startle?.at === e.blaze.at) delete life[f.id].startle;
+    delete e.targets; delete e.swap; delete e.showMs; delete e.blaze;
+    Object.assign(e, { phase: "home", at: now });
+  };
+  if (s.status !== "working") return end();
   if (e.phase === "read" && since >= READ) {
     const names = Object.keys(SPELLS), fresh = names.filter(n => n !== e.spell);
     const pick = fresh.length ? fresh : names;
     Object.assign(e, { phase: "spell", at: now, spell: pick[Math.floor(Math.random() * pick.length)] });
-  } else if (e.phase === "spell" && since >= SPELLS[e.spell]) {
-    Object.assign(e, { phase: "home", at: now });
+    if (e.spell === "rain") prank(e, s, run, life, now);
+    if (e.spell === "gust") swapPrank(e, s, run, life, now);
+    if (e.spell === "fire") firePrank(e, s, run, life, now);
+  } else if (e.phase === "spell" && since >= (e.showMs ?? SPELLS[e.spell])) {
+    end();
     delete e.nextShow;
   }
+}
+
+// sleepersOf: the friends of the group asleep in their cards or by the fire,
+// in random order.
+const sleepersOf = (s, run, life) => run.sessions
+  .filter(f => f !== s && isAsleep(f.status) && SOAKABLE.includes(life[f.id]?.phase))
+  .map(f => [Math.random(), f]).sort((a, b) => a[0] - b[0]).map(([, f]) => f);
+
+// prank: with friends of the group asleep, half the time the rain comes down
+// on some of them instead: one or more, as many and whichever chance picks.
+function prank(e, s, run, life, now) {
+  const sleepers = sleepersOf(s, run, life);
+  if (!sleepers.length || Math.random() < .5) return;
+  e.targets = sleepers.slice(0, 1 + Math.floor(Math.random() * sleepers.length)).map(f => f.id);
+  for (const id of e.targets) life[id].soak = { at: now + PRANK_AT, by: s.id };
+}
+
+// swapPrank: with friends of the group asleep, half the time the gust swaps
+// the hats of two of them, whichever chance picks, or with only one asleep,
+// that one's and its own (and then the show lasts until its hat is back).
+function swapPrank(e, s, run, life, now) {
+  const sleepers = sleepersOf(s, run, life);
+  if (!sleepers.length || Math.random() < .5) return;
+  const pair = sleepers.length > 1 ? [sleepers[0].id, sleepers[1].id] : [s.id, sleepers[0].id];
+  const at = now + SWAP_AT;
+  e.swap = { at, pair, flown: false };
+  if (pair.includes(s.id)) e.showMs = SWAP_AT + SWAP;
+  pair.forEach((id, i) => { if (id !== s.id) life[id].swap = { at, other: pair[1 - i] }; });
+}
+
+// firePrank: with friends of the group asleep by the campfire, half the time
+// the fireball goes straight up instead and comes down in the fire a while
+// later, startling them all (and the show lasts FIRE_PRANK).
+function firePrank(e, s, run, life, now) {
+  const campers = run.sessions.filter(f => f !== s && isAsleep(f.status) && life[f.id]?.phase === "camp");
+  if (!campers.length || Math.random() < .5) return;
+  const at = now + BLAZE_AT;
+  e.blaze = { at, flown: false };
+  e.showMs = FIRE_PRANK;
+  for (const f of campers) life[f.id].startle = { at };
 }
 
 // moveCamp: the spot by the fire moved (the cards changed, someone joined or

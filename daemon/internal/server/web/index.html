@@ -52,13 +52,13 @@
   .group { position: relative; }
   .stage { position: absolute; inset: 0; pointer-events: none; }
   .stage[hidden] { display: none; }
-  .actor, .fire { position: absolute; top: 0; left: 0; }
-  .actor svg.mascot, .fire svg { display: block; }
-  .fire > svg { transform: scale(.15); opacity: 0; transform-origin: 50% 90%; transition: transform 1.2s ease-in, opacity 1.2s ease-in; }
-  .fire.lit > svg { transform: scale(1); opacity: 1; transition: transform .8s ease-out, opacity .5s ease-out; }
-  .fire::before { content: ""; position: absolute; inset: -40% -160%; z-index: -1; opacity: 0; transition: opacity 1.2s;
+  .actor, .campfire { position: absolute; top: 0; left: 0; }
+  .actor svg.mascot, .campfire svg { display: block; }
+  .campfire > svg { transform: scale(.15); opacity: 0; transform-origin: 50% 90%; transition: transform 1.2s ease-in, opacity 1.2s ease-in; }
+  .campfire.lit > svg { transform: scale(1); opacity: 1; transition: transform .8s ease-out, opacity .5s ease-out; }
+  .campfire::before { content: ""; position: absolute; inset: -40% -160%; z-index: -1; opacity: 0; transition: opacity 1.2s;
                   background: radial-gradient(closest-side, rgba(242, 160, 61, .13), transparent); }
-  .fire.lit::before { opacity: 1; }
+  .campfire.lit::before { opacity: 1; }
   .home-spot { visibility: hidden; }
   .card.camp .badge { display: none; }
   .card.camp-l .head { flex-direction: row-reverse; }
@@ -558,6 +558,10 @@ function campSpots(sessions, campers) {
 // change, key]; the mascot is redrawn only when the key changes.
 function actorLook(s, e, now) {
   const ago = now - e.at;
+  // Soaked by a friend's prank, or its hat swapped, asleep in its card or by the fire.
+  if (e.soak && now >= e.soak.at) return ["soaked", null, `soak${e.soak.at}`];
+  if (e.swap?.other && now >= e.swap.at) return ["hatswap", null, `swap${e.swap.at}`];
+  if (e.startle && now >= e.startle.at) return ["startled", null, `startle${e.startle.at}`];
   switch (e.phase) {
     case "look": return ["looking", null, `look${e.at}`];
     case "wave": return ["waving", null, `wave${e.at}`];
@@ -566,7 +570,13 @@ function actorLook(s, e, now) {
     case "doze": case "settle": return ["done", { kind: "sleep", ago }, `doze${e.at}`];
     case "sleep": case "camp": return ["done", null, "sleep"];
     case "read": return ["read", null, `read${e.at}`];
-    case "spell": return [e.spell, null, `spell${e.at}`];
+    case "spell": {
+      // A rain, a gust or a fire cast as a prank on its friends (see life.js).
+      const prank = e.spell === "rain" && e.targets ? "prank"
+        : e.spell === "gust" && e.swap ? (e.swap.pair.includes(s.id) ? "blowswap" : "blow")
+        : e.spell === "fire" && e.blaze ? "fireprank" : e.spell;
+      return [prank, null, `spell${e.at}`];
+    }
   }
   // A change (waking up, a sulk) plays while it lasts, then the usual animation.
   const c = changed[s.id], playing = c && now - c.at < changeMs(c.kind);
@@ -628,7 +638,15 @@ function tickStage() {
       if (el.dataset.key !== key) {
         el.dataset.key = key;
         el.className = `actor ${status}`;
-        el.innerHTML = mascotSVG(s.mascot, status, change);
+        // One soaked by a prank glares towards the prankster; one in a hat
+        // swap gets the other one's hat and looks its way; one in a fire
+        // prank looks towards the campfire.
+        const otherId = e.soak?.by ?? e.swap?.other ?? e.swap?.pair.find(id => id !== s.id);
+        const other = status === "fireprank" || status === "startled"
+          ? stage.querySelector(`.campfire[data-run="${CSS.escape(run.key)}"]:not(.out)`)
+          : otherId && stage.querySelector(`.actor[data-id="${CSS.escape(otherId)}"]`);
+        const side = other && Number(other.dataset.x) < to.x ? -1 : 1;
+        el.innerHTML = mascotSVG(s.mascot, status, change, { side, other: run.sessions.find(f => f.id === otherId)?.mascot });
       }
       const svg = el.firstElementChild;
       svg.style.width = `${home.w}px`; svg.style.height = `${home.h}px`;
@@ -640,19 +658,43 @@ function tickStage() {
       card.classList.toggle("camp-l", away === "l");
       card.classList.toggle("camp-r", away === "r");
     }
+    // A gust cast as a prank sends the two hats of its swap flying, once,
+    // from where the two stand now (see flyHats).
+    for (const s of run.sessions) {
+      const swap = life[s.id]?.swap;
+      if (!swap?.pair || swap.flown) continue;
+      swap.flown = true;
+      const els = swap.pair.map(id => stage.querySelector(`.actor[data-id="${CSS.escape(id)}"]`));
+      if (els.some(el => !el)) continue;
+      const box = (el, id) => ({ x: Number(el.dataset.x), y: Number(el.dataset.y), w: homes[id].w, h: homes[id].h });
+      flyHats(stage, swap.pair.map((id, i) => ({
+        index: run.sessions.find(f => f.id === id).mascot, box: box(els[i], id),
+        side: Number(els[1 - i].dataset.x) > Number(els[i].dataset.x) ? 1 : -1,
+      })), Math.max(0, swap.at - now));
+    }
+    // A fire cast as a prank drops its fireball into the group's campfire, once.
+    for (const s of run.sessions) {
+      const blaze = life[s.id]?.blaze;
+      if (!blaze || blaze.flown) continue;
+      blaze.flown = true;
+      const fire = stage.querySelector(`.campfire[data-run="${CSS.escape(run.key)}"]:not(.out)`);
+      const svg = fire?.firstElementChild;
+      if (svg) dropFireball(stage, { el: fire, x: Number(fire.dataset.x), y: Number(fire.dataset.y),
+        w: parseFloat(svg.style.width), h: parseFloat(svg.style.height) }, Math.max(600, blaze.at - now));
+    }
     // The fire lights once someone sits by it and goes out when the last one
     // leaves. It can't walk: when the camp moves, it goes out and a new one
     // lights at the new spot once someone gets there.
     if (camp) {
       fires.add(run.key);
-      let fire = stage.querySelector(`.fire[data-run="${CSS.escape(run.key)}"]:not(.out)`);
+      let fire = stage.querySelector(`.campfire[data-run="${CSS.escape(run.key)}"]:not(.out)`);
       if (fire && (Number(fire.dataset.x) !== camp.fire.x || Number(fire.dataset.y) !== camp.fire.y)) {
         douse(fire);
         fire = null;
       }
       if (!fire) {
         fire = document.createElement("div");
-        fire.className = "fire";
+        fire.className = "campfire";
         fire.dataset.run = run.key;
         fire.dataset.x = camp.fire.x; fire.dataset.y = camp.fire.y;
         fire.innerHTML = campfireSVG();
@@ -665,7 +707,7 @@ function tickStage() {
     }
   }
   stage.querySelectorAll(".actor").forEach(el => { if (!seen.has(el.dataset.id)) el.remove(); });
-  stage.querySelectorAll(".fire:not(.out)").forEach(el => { if (!fires.has(el.dataset.run)) douse(el); });
+  stage.querySelectorAll(".campfire:not(.out)").forEach(el => { if (!fires.has(el.dataset.run)) douse(el); });
 }
 
 // douse puts a fire out and clears it away once it has died down.

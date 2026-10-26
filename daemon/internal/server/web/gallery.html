@@ -19,6 +19,11 @@
   /* The gust's run for the hat goes well to the right of the mascot. */
   .colors.wide { grid-template-columns: repeat(2, 360px); }
   .wide .cell { justify-content: flex-start; padding-left: 30px; }
+  /* A prank: three mascots side by side, the prankster in the middle. */
+  .scene { position: relative; background: #1f1f1d; border-radius: 10px; width: 560px; height: 190px; display: flex; align-items: center; justify-content: space-around; }
+  .scene svg.mascot { width: 156px; height: 120px; }
+  #blaze { width: 720px; }
+  #blaze svg.mascot { width: 130px; height: 100px; }
 </style>
 <link rel="stylesheet" href="mascot.css">
 </head>
@@ -40,6 +45,19 @@
 <div class="colors" id="gags-fire" style="margin-top: 12px"></div>
 <p style="margin-top: 16px">Rained on: droplets, a stream of water off the screen, a quiet moment, rain, soaked and cross, dries off.</p>
 <div class="colors" id="gags-rain" style="margin-top: 12px"></div>
+
+<h2>Pranks</h2>
+<p>Rain on sleeping friends (half the time there are any, on one or more of them at random): the one in the middle laughs, the soaked ones wake up, glare at it, dry off and go back to sleep.</p>
+<div class="scene" id="prank-all" style="margin-top: 12px"></div>
+<p style="margin-top: 16px">The same, but only one of them gets soaked.</p>
+<div class="scene" id="prank-one" style="margin-top: 12px"></div>
+
+<p style="margin-top: 16px">Hat swap (half the time the gust finds friends asleep): the gust takes the hats of two sleeping friends and swaps them; they wake up, toss them back and go back to sleep.</p>
+<div class="scene" id="swap-two" style="margin-top: 12px"></div>
+<p style="margin-top: 16px">Hat swap with only one friend asleep: it swaps hats with the prankster.</p>
+<div class="scene" id="swap-one" style="margin-top: 12px"></div>
+<p style="margin-top: 16px">Fireball in the campfire (half the time friends sleep by the fire): it flares up, they're startled, the prankster is ashamed.</p>
+<div class="scene" id="blaze" style="margin-top: 12px"></div>
 
 <h2>All colors while working</h2>
 <div class="colors" id="colors"></div>
@@ -72,6 +90,78 @@ document.getElementById("gags-read").innerHTML = NAMES.map((_, shape) => cell(sh
 document.getElementById("gags-gust").innerHTML = NAMES.map((_, shape) => cell(shape, "gust")).join("");
 document.getElementById("gags-fire").innerHTML = NAMES.map((_, shape) => cell(shape, "fire")).join("");
 document.getElementById("gags-rain").innerHTML = NAMES.map((_, shape) => cell(shape, "rain")).join("");
+
+// Prank scenes: the one in the middle casts the rain as a prank ("prank",
+// looping), and each friend it lands on (soaked: left, right) is "soaked"
+// from PRANK_AT into each loop, glaring towards the middle; otherwise asleep.
+function prankScene(el, soaked) {
+  const friends = [[5, 1], [6, -1]]; // mascot, side the prankster is on
+  el.innerHTML = `<div data-i="0"></div><div>${mascotSVG(0, "prank")}</div><div data-i="1"></div>`;
+  const start = Date.now();
+  const slots = el.querySelectorAll("[data-i]");
+  setInterval(() => {
+    const t = (Date.now() - start) % RAIN;
+    slots.forEach((slot, i) => {
+      const [index, side] = friends[i];
+      const status = soaked[i] && t >= PRANK_AT && t < PRANK_AT + SOAK ? "soaked" : "done";
+      if (slot.dataset.status === status) return;
+      slot.dataset.status = status;
+      slot.innerHTML = mascotSVG(index, status, null, { side });
+    });
+  }, 20);
+}
+prankScene(document.getElementById("prank-all"), [true, true]);
+prankScene(document.getElementById("prank-one"), [true, false]);
+
+// Hat swap scenes, every 12 s: the prankster casts the gust ("blow", or
+// "blowswap" when it's in the swap itself); SWAP_AT in, the two in the swap
+// get their hats swapped (flyHats), a sleeping one drawn "hatswap" for SWAP.
+// cast is the prankster's slot, pair the two slots in the swap; each slot is
+// [mascot, status when nothing happens].
+function swapScene(el, slots, cast, pair) {
+  const play = () => {
+    el.innerHTML = slots.map(() => "<div></div>").join("");
+    const cells = [...el.children];
+    const sideOf = (i, j) => (cells[j].getBoundingClientRect().x > cells[i].getBoundingClientRect().x ? 1 : -1);
+    const draw = (i, status, opts) => { cells[i].innerHTML = mascotSVG(slots[i][0], status, null, opts); };
+    slots.forEach(([, status], i) => draw(i, status));
+    const [a, b] = pair, other = i => (i === a ? b : a);
+    draw(cast, pair.includes(cast) ? "blowswap" : "blow", { side: sideOf(cast, other(cast)), other: slots[other(cast)][0] });
+    const box = i => {
+      const r = cells[i].firstElementChild.getBoundingClientRect(), s = el.getBoundingClientRect();
+      return { x: r.x - s.x, y: r.y - s.y, w: r.width, h: r.height };
+    };
+    flyHats(el, pair.map(i => ({ index: slots[i][0], box: box(i), side: sideOf(i, other(i)) })), SWAP_AT);
+    setTimeout(() => pair.forEach(i => { if (i !== cast) draw(i, "hatswap", { side: sideOf(i, other(i)), other: slots[other(i)][0] }); }), SWAP_AT);
+    setTimeout(() => pair.forEach(i => { if (i !== cast) draw(i, "done"); }), SWAP_AT + SWAP);
+  };
+  play();
+  setInterval(play, 12000);
+}
+swapScene(document.getElementById("swap-two"), [[5, "done"], [0, "working"], [6, "done"]], 1, [0, 2]);
+swapScene(document.getElementById("swap-one"), [[0, "working"], [5, "done"]], 0, [0, 1]);
+
+// The fire prank scene, every 12 s: two asleep by a campfire, the prankster
+// on the right ("fireprank"); BLAZE_AT in the fireball lands in the fire
+// (dropFireball) and the two are "startled" for STARTLE.
+function blazeScene(el) {
+  const play = () => {
+    el.innerHTML = `<div>${mascotSVG(5, "done")}</div><div class="fire-cell">${campfireSVG()}</div><div>${mascotSVG(6, "done")}</div>` +
+      `<div>${mascotSVG(0, "fireprank", null, { side: -1 })}</div>`;
+    const [a, fire, b] = el.children;
+    fire.firstElementChild.style.cssText = "width:88px;height:120px;display:block";
+    const s = el.getBoundingClientRect(), r = fire.firstElementChild.getBoundingClientRect();
+    dropFireball(el, { el: fire, x: r.x - s.x, y: r.y - s.y, w: r.width, h: r.height }, BLAZE_AT);
+    setTimeout(() => {
+      a.innerHTML = mascotSVG(5, "startled", null, { side: 1 });
+      b.innerHTML = mascotSVG(6, "startled", null, { side: -1 });
+    }, BLAZE_AT);
+    setTimeout(() => { a.innerHTML = mascotSVG(5, "done"); b.innerHTML = mascotSVG(6, "done"); }, BLAZE_AT + STARTLE);
+  };
+  play();
+  setInterval(play, 12000);
+}
+blazeScene(document.getElementById("blaze"));
 
 // Loops of changes between states. Like the screen, each redraw passes how
 // long ago the last change started, so animations carry on smoothly from it.
