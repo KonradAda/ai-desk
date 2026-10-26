@@ -495,34 +495,60 @@ function cardHTML(s, now, span, color) {
 // update to the next, so they move and animate smoothly.
 const stage = document.getElementById("stage");
 const life = {}; // session id -> { phase, at, walkMs }, see life.js
+const opened = Date.now(); // the cards settle for a moment after the page opens (fonts load)
 let stageRuns = []; // the groups on the page: [{ key, sessions }]
 let homes = {}; // session id -> { x, y, w, h } of its card's home spot, in screen px
+let spans = {}; // session id -> { left, right } of its card, in screen px
 
 // measureStage reads where every card's mascot belongs, after the cards are drawn.
 function measureStage() {
   const box = document.getElementById("native").getBoundingClientRect();
   const scale = box.width / 800;
   const at = r => ({ x: (r.left - box.left) / scale, y: (r.top - box.top) / scale, w: r.width / scale, h: r.height / scale });
-  homes = {};
+  homes = {}; spans = {};
   grid.querySelectorAll(".card").forEach(card => {
     homes[card.dataset.id] = at(card.querySelector(".home-spot").getBoundingClientRect());
+    const c = at(card.getBoundingClientRect());
+    spans[card.dataset.id] = { left: c.x, right: c.x + c.w };
   });
 }
 
 // campSpots places the group's fire halfway between the first and the last
 // mascot by it, so they meet in the middle, and the mascots on either side of
-// it, half of them on each side. Returns { fire: { x, y, h }, spots: id -> { x, y }, sides: id -> "l" | "r" }.
-function campSpots(campers) {
+// it, half of them on each side. The camp stays off the cards of the others
+// in the group (a working mascot shouldn't stand in the fire): if the middle
+// falls on one, it moves to the nearest stretch of the campers' own cards.
+// Returns { fire: { x, y, h }, spots: id -> { x, y }, sides: id -> "l" | "r" }.
+function campSpots(sessions, campers) {
   const first = homes[campers[0].id], h = first.h, w = first.w;
   const bodyX = w * 30 / 78; // the body's middle on the mascot's canvas
-  const fireX = (first.x + homes[campers[campers.length - 1].id].x) / 2 + bodyX;
   const fireW = h * 44 / 60;
   const left = Math.ceil(campers.length / 2);
+  // Where each one sits, measured from the fire's middle.
+  const offsets = campers.map((s, i) => {
+    const out = i < left ? left - 1 - i : i - left; // how many sit between it and the fire
+    return (i < left ? -fireW / 2 - w * .42 - out * w * .75 : fireW / 2 + w * .4 + out * w * .75) - bodyX;
+  });
+  const reach = [Math.min(-fireW / 2, ...offsets), Math.max(fireW / 2, ...offsets.map(o => o + w))];
+  // The stretches of neighbouring campers' cards, kept clear of their outer
+  // corners (where × sits).
+  const free = [];
+  sessions.forEach((s, i) => {
+    if (!campers.includes(s)) return;
+    const prev = free[free.length - 1];
+    if (prev && campers.includes(sessions[i - 1])) prev.hi = spans[s.id].right - 28;
+    else free.push({ lo: spans[s.id].left + 28, hi: spans[s.id].right - 28 });
+  });
+  const want = (first.x + homes[campers[campers.length - 1].id].x) / 2 + bodyX;
+  let fireX = want, best = Infinity;
+  for (const f of free) {
+    const lo = f.lo - reach[0], hi = f.hi - reach[1];
+    const x = lo > hi ? (lo + hi) / 2 : Math.min(hi, Math.max(lo, want)); // too narrow: centred
+    if (Math.abs(x - want) < best) { best = Math.abs(x - want); fireX = x; }
+  }
   const spots = {}, sides = {};
   campers.forEach((s, i) => {
-    const out = i < left ? left - 1 - i : i - left; // how many sit between it and the fire
-    const body = i < left ? fireX - fireW / 2 - w * .42 - out * w * .75 : fireX + fireW / 2 + w * .4 + out * w * .75;
-    spots[s.id] = { x: body - bodyX, y: first.y };
+    spots[s.id] = { x: fireX + offsets[i], y: first.y };
     sides[s.id] = i < left ? "l" : "r";
   });
   return { fire: { x: fireX - fireW / 2, y: first.y, h }, spots, sides };
@@ -539,6 +565,8 @@ function actorLook(s, e, now) {
     case "out": case "back": return ["walking", null, "walk"];
     case "doze": case "settle": return ["done", { kind: "sleep", ago }, `doze${e.at}`];
     case "sleep": case "camp": return ["done", null, "sleep"];
+    case "read": return ["read", null, `read${e.at}`];
+    case "spell": return [e.spell, null, `spell${e.at}`];
   }
   // A change (waking up, a sulk) plays while it lasts, then the usual animation.
   const c = changed[s.id], playing = c && now - c.at < changeMs(c.kind);
@@ -550,11 +578,14 @@ const AWAY = ["out", "settle", "camp"]; // phases spent at the fire, or on the w
 function tickStage() {
   if (dragId) return;
   const now = Date.now();
-  stepLife(life, stageRuns, now);
+  stepLife(life, stageRuns, now, now + offset);
   const seen = new Set(), fires = new Set();
   for (const run of stageRuns) {
     const campers = run.sessions.filter(s => homes[s.id] && CAMPING.includes(life[s.id].phase));
-    const camp = campers.length ? campSpots(campers) : null;
+    // One looking around while there's a camp will join it: the camp counts
+    // it in from the start, so it's placed once and nobody turns back halfway.
+    const company = run.sessions.filter(s => campers.includes(s) || (campers.length && homes[s.id] && life[s.id].phase === "look"));
+    const camp = campers.length ? campSpots(run.sessions, company) : null;
     for (const s of run.sessions) {
       const home = homes[s.id];
       if (!home) continue;
@@ -568,6 +599,30 @@ function tickStage() {
         el.dataset.id = s.id;
         stage.appendChild(el);
       }
+      // Where it stands. Nothing slides: in its card it stays put with the
+      // card; when its spot by the fire moves along the row (someone joins or
+      // leaves, the cards change), it gets up and walks over (moveCamp); it
+      // only ever moves by walking, or jumps to another row or page.
+      const from = { x: Number(el.dataset.x), y: Number(el.dataset.y) };
+      const shifted = to => !fresh && Date.now() - opened > 2000 && to.y === from.y && Math.abs(to.x - from.x) > 1;
+      let to = AWAY.includes(e.phase) && camp ? camp.spots[s.id] : home;
+      if (shifted(to) && (AT_FIRE.includes(e.phase) || e.phase === "out")) moveCamp(e, now);
+      if (!fresh && (e.phase === "wave" || e.phase === "rouse")) to = from; // getting up where it is
+      const walking = e.phase === "out" || e.phase === "back";
+      if (fresh || to.x !== from.x || to.y !== from.y) {
+        let ms = 0;
+        if (walking && shifted(to)) {
+          // From wherever it is right now, even halfway through another walk.
+          const at = new DOMMatrix(getComputedStyle(el).transform);
+          ms = Math.hypot(to.x - at.e, to.y - at.f) / WALK_SPEED;
+          e.at = now;
+          e.walkMs = ms;
+        }
+        el.style.transition = ms ? `transform ${ms}ms linear` : "none";
+        el.style.transform = `translate(${to.x}px, ${to.y}px)`;
+        el.dataset.x = to.x; el.dataset.y = to.y;
+      }
+      if (walking && e.walkMs === undefined) e.walkMs = 0; // already there
       // Draw it anew only when how it looks changes.
       const [status, change, key] = actorLook(s, e, now);
       if (el.dataset.key !== key) {
@@ -577,54 +632,47 @@ function tickStage() {
       }
       const svg = el.firstElementChild;
       svg.style.width = `${home.w}px`; svg.style.height = `${home.h}px`;
-      // Where it stands, and how it gets there: walks at walking pace, a
-      // small shuffle (making room by the fire) eases, anything else (a new
-      // page or layout) jumps.
-      const to = AWAY.includes(e.phase) && camp ? camp.spots[s.id] : home;
-      const from = { x: Number(el.dataset.x), y: Number(el.dataset.y) };
-      const walking = e.phase === "out" || e.phase === "back";
-      if (fresh || from.x !== to.x || from.y !== to.y) {
-        const dist = fresh ? 0 : Math.hypot(to.x - from.x, to.y - from.y);
-        const ms = walking ? dist / WALK_SPEED : dist < 60 ? 400 : 0;
-        if (walking && e.walkMs === undefined) e.walkMs = ms;
-        el.style.transition = ms ? `transform ${ms}ms ${walking ? "linear" : "ease"}` : "none";
-        el.style.transform = `translate(${to.x}px, ${to.y}px)`;
-        el.dataset.x = to.x; el.dataset.y = to.y;
-      } else if (walking && e.walkMs === undefined) {
-        e.walkMs = 0; // already there
-      }
-      // A card whose mascot is away hides its badge and moves × to the outer corner.
+      // A card whose mascot is off to the fire (or on its way back) hides its
+      // badge and moves × to the outer corner.
       const card = grid.querySelector(`.card[data-id="${CSS.escape(s.id)}"]`);
-      const away = AWAY.includes(e.phase) && camp ? camp.sides[s.id] : null;
+      const away = CAMPING.includes(e.phase) && camp ? camp.sides[s.id] : e.phase === "back" ? "r" : null;
       card.classList.toggle("camp", !!away);
       card.classList.toggle("camp-l", away === "l");
       card.classList.toggle("camp-r", away === "r");
     }
-    // The fire lights once someone sits by it and goes out when the last one leaves.
+    // The fire lights once someone sits by it and goes out when the last one
+    // leaves. It can't walk: when the camp moves, it goes out and a new one
+    // lights at the new spot once someone gets there.
     if (camp) {
       fires.add(run.key);
-      let fire = stage.querySelector(`.fire[data-run="${CSS.escape(run.key)}"]`);
+      let fire = stage.querySelector(`.fire[data-run="${CSS.escape(run.key)}"]:not(.out)`);
+      if (fire && (Number(fire.dataset.x) !== camp.fire.x || Number(fire.dataset.y) !== camp.fire.y)) {
+        douse(fire);
+        fire = null;
+      }
       if (!fire) {
         fire = document.createElement("div");
         fire.className = "fire";
         fire.dataset.run = run.key;
+        fire.dataset.x = camp.fire.x; fire.dataset.y = camp.fire.y;
         fire.innerHTML = campfireSVG();
+        fire.style.transform = `translate(${camp.fire.x}px, ${camp.fire.y}px)`;
+        const svg = fire.firstElementChild;
+        svg.style.height = `${camp.fire.h}px`; svg.style.width = `${camp.fire.h * 44 / 60}px`;
         stage.prepend(fire);
       }
-      clearTimeout(fire.out);
-      delete fire.out;
-      const svg = fire.firstElementChild;
-      svg.style.height = `${camp.fire.h}px`; svg.style.width = `${camp.fire.h * 44 / 60}px`;
-      fire.style.transform = `translate(${camp.fire.x}px, ${camp.fire.y}px)`;
-      fire.classList.toggle("lit", campers.some(s => ["settle", "camp"].includes(life[s.id].phase)));
+      fire.classList.toggle("lit", campers.some(s => AT_FIRE.includes(life[s.id].phase)));
     }
   }
   stage.querySelectorAll(".actor").forEach(el => { if (!seen.has(el.dataset.id)) el.remove(); });
-  stage.querySelectorAll(".fire").forEach(el => {
-    if (fires.has(el.dataset.run) || el.out) return;
-    el.classList.remove("lit");
-    el.out = setTimeout(() => el.remove(), 1500);
-  });
+  stage.querySelectorAll(".fire:not(.out)").forEach(el => { if (!fires.has(el.dataset.run)) douse(el); });
+}
+
+// douse puts a fire out and clears it away once it has died down.
+function douse(fire) {
+  fire.classList.add("out");
+  fire.classList.remove("lit");
+  setTimeout(() => fire.remove(), 1500);
 }
 setInterval(tickStage, 100);
 

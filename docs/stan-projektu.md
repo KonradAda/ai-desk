@@ -49,6 +49,11 @@ Potem otwórz http://127.0.0.1:7777 (ekran) i http://127.0.0.1:7777/gallery.html
 - Przerwany przez Ciebie: foch. Twarz w 0,5 s jedzie po skosie w górę i w bok (zadarty nos), oczy przymknięte od góry, podkówka, różdżka odłożona. Potem co 4 s odwraca twarz na drugą stronę z obłoczkiem „hmpf”. Po nowym poleceniu twarz płynnie wraca na środek i stworek pracuje dalej.
 - Przy pracy co 4 s mruga.
 - Budzenie (1,8 s) i zasypianie (2,4 s): powieki stopniowo, mruganie, walka ze snem. Łagodne lądowanie, jeśli zmiana złapie stworka w powietrzu.
+- Czar „piorun” (`zap`, 8,4 s): macha różdżką i lecą z niej malutkie piorunki „Z”, potem podnosi ją pionowo, piorun trafia 3 razy i za każdym razem widać szkielet jak na prześwietleniu, potem jest umorusany sadzą z dymkiem z czapki, otrzepuje się (kurz leci) i jest czysty.
+- Czar „wichura” (`gust`, 8 s): macha różdżką, przy jej czubku przelatują z lewej do prawej krótkie kreski wiatru, potem podmuch przelatuje od lewej, przechyla go i zrywa czapkę. Czapka koziołkuje i ląduje na ziemi po prawej. Stworek patrzy na nią, biegnie w podskokach, kuca, podnosi, zakłada i wraca biegiem na swoje miejsce. Ruch ciała i czapki liczy `GUST_MOVES` w `mascot.js` (czapka na głowie idzie punkt w punkt za ciałem). Żeby bieg wychodził poza płótno stworka, `svg.mascot` ma `overflow: visible`.
+- Czar „ogień” (`fire`, 10 s): macha różdżką i lecą ogniste iskry, celuje w prawy górny róg i strzela kulą ognia, która po skosie wylatuje za ekran. Odrywa się od niej iskra i spada łukiem na środek czapki. Czapka długo się pali i dymi (ok. 3,5 s), a stworek nic nie zauważa: patrzy przed siebie, mruga, rozgląda się. Potem się orientuje, wystraszony podskakuje (wielkie oczy, otwarta buzia), celuje różdżką w czapkę i gasi ją wodą (para). Czubek czapki zostaje osmalony, na koniec mruga z ulgą.
+- Czar „deszcz” (`rain`, 12 s): macha różdżką i lecą kropelki, celuje w prawy górny róg i z różdżki tryska kreskówkowy strumień wody łukiem za ekran: niebieski z ciemnym obrysem, po nim płyną białe błyski i ciemniejsze plamy, na czole jedzie rozbryzg (`addRainKeyframes`, tor w `RAIN_ARC`), a na boki pryskają kropelki. Strumień odrywa się od różdżki i odlatuje. Przez ok. 2 s nic się nie dzieje (stworek raz mruga), potem z góry spadają same krople, bez chmury (ok. 2,4 s). Stworek robi się mokry (ciemniejszy, kapie z niego, czapka oklapła) i zły (brwi, grymas, zmrużone oczy), potem wysycha z parą i mruga.
+- Czytanie księgi czarów (`read`, 6 s): chowa różdżkę, wyciąga księgę czarów, otwiera, czyta 2 linijki (oczy biegną po linijce i wracają na początek), przewraca stronę (kartka unosi się, wygina i opada na lewą stronę), czyta dalej, zamyka i odkłada.
 - Animacje liczą fazę od zegara, więc przerysowanie karty ich nie przerywa.
 
 **Życie między zadaniami (`life.js`, scena w `index.html`)**
@@ -57,7 +62,10 @@ Potem otwórz http://127.0.0.1:7777 (ekran) i http://127.0.0.1:7777/gallery.html
 - Ktoś z grupy (ten sam projekt, ten sam rząd) też jest wolny → macha do niego różdżką i woła; śpiący się budzi; obaj idą do siebie i spotykają się w połowie drogi. Ognisko rozpala się, gdy dojdzie pierwszy. Każdy przy ognisku zasypia (animacja zasypiania).
 - Ktoś przy ognisku dostaje pracę → wstaje i wraca do karty. Kto zostanie przy ognisku sam, też wraca do swojej karty i tam zasypia. Ognisko gaśnie.
 - Po otwarciu ekranu śpiący z jednej grupy od razu siedzą przy ognisku, bez animacji.
+- Stworki nigdy się nie ślizgają, tylko chodzą. Gdy miejsce przy ognisku się przesuwa (nowy agent, ktoś odchodzi, karty zmieniają szerokość), siedzący budzą się i idą na nowe miejsce, stare ognisko gaśnie, a nowe rozpala się po dojściu pierwszego. Ognisko nie staje na karcie kogoś, kto przy nim nie siedzi.
+- Nowa sesja bez zadania (zmiana stanu mniej niż 15 s temu) też się rozgląda i dołącza do grupy. Ktoś, kto się rozgląda, gdy jest już ognisko, jest od razu liczony do obozu, żeby miejsce wyznaczyć raz.
 - Logika to automat stanów bez rysowania (`stepLife`), żeby dało się ją przenieść do firmware.
+- Przy pracy co 5–20 s (losowo) stworek robi pokaz: zawsze najpierw czyta księgę czarów, potem rzuca losowy czar z listy `SPELLS` w `mascot.js` (piorun, wichura, ogień i deszcz; nie dwa razy ten sam z rzędu, gdy jest więcej). Pytanie albo przerwanie ucina pokaz. Nowy czar: rysunek w `mascotSVG`, animacja w `mascot.css`, wpis w `SPELLS`. Wszystkie pokazy są też w galerii.
 
 **Testy:** `go test ./...` w `daemon/` (stan sesji, plan, transkrypcja, układ, ustawienia, tryb ręczny przez HTTP).
 

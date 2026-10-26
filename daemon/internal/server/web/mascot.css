@@ -1,5 +1,6 @@
 /* The agent mascot, shared by the simulator and the gallery (mascot.js draws it). */
-svg.mascot { flex-shrink: 0; }
+/* Visible overflow lets a gag reach past the canvas (the gust's run for the hat). */
+svg.mascot { flex-shrink: 0; overflow: visible; }
 @keyframes bob { 0%, 100% { transform: translateY(0) } 50% { transform: translateY(-4px) } }
 .working svg.mascot, .waiting svg.mascot { animation: bob .8s ease-in-out infinite; }
 /* Needs you: the sign waves a few times, then rests until the next wave
@@ -106,3 +107,371 @@ svg.mascot.changing { animation: land .35s ease-out 1 forwards; }
 .mascot .wand-wave { transform-box: view-box; transform-origin: 55px 48px; animation: wand-wave .65s ease-in-out 2; }
 @keyframes wand-wave { 0%, 100% { transform: rotate(0) } 30% { transform: rotate(-28deg) } 70% { transform: rotate(14deg) } }
 .walking svg.mascot { animation: bob .4s ease-in-out infinite; }
+/* Work gag: zapped by its own spell (mascotSVG "zap"; 8.4 s = ZAP in the
+   script). It waves the wand about with tiny zigzag bolts flying off it,
+   raises it straight up (3-3.45 s) and the bolt strikes three times (3.6,
+   4.02, 4.44 s), each time showing its skeleton while it shakes; then it's sooty with smoke rising from the
+   hat, shakes the soot off with dust flying and is clean again. The keyframes
+   are worked out from those times, so change them all together. */
+.mascot .zap-wand { transform-box: view-box; transform-origin: 55px 48px; animation: zap-wand 8.4s ease-in-out infinite; }
+@keyframes zap-wand { 0% { transform: rotate(0deg) } 3.57% { transform: rotate(-18deg) } 7.14% { transform: rotate(6deg) } 10.71% { transform: rotate(-18deg) } 14.29% { transform: rotate(6deg) } 17.86% { transform: rotate(-18deg) } 21.43% { transform: rotate(6deg) } 25% { transform: rotate(-18deg) } 28.57% { transform: rotate(6deg) } 32.14% { transform: rotate(-18deg) } 35.71% { transform: rotate(0deg) } 41.07% { transform: rotate(-38deg) } 55.36% { transform: rotate(-38deg) } 59.52% { transform: rotate(0deg) } 100% { transform: rotate(0deg) } }
+.mascot .zap-spark { opacity: 0; transform-box: fill-box; transform-origin: center; animation: zap-spark 8.4s ease-out infinite; }
+@keyframes zap-spark {
+  0% { opacity: 0; transform: translate(var(--dx), var(--dy)) scale(.3) }
+  3.57% { opacity: 0; transform: translate(0, 0) scale(1) }
+  3.93% { opacity: 1; transform: translate(0, 0) scale(1) }
+  9.52% { opacity: 0; transform: translate(var(--dx), var(--dy)) scale(.3) }
+  10.71% { opacity: 0; transform: translate(0, 0) scale(1) }
+  11.07% { opacity: 1; transform: translate(0, 0) scale(1) }
+  16.67% { opacity: 0; transform: translate(var(--dx), var(--dy)) scale(.3) }
+  17.86% { opacity: 0; transform: translate(0, 0) scale(1) }
+  18.21% { opacity: 1; transform: translate(0, 0) scale(1) }
+  23.81% { opacity: 0; transform: translate(var(--dx), var(--dy)) scale(.3) }
+  25% { opacity: 0; transform: translate(0, 0) scale(1) }
+  25.36% { opacity: 1; transform: translate(0, 0) scale(1) }
+  30.95% { opacity: 0; transform: translate(var(--dx), var(--dy)) scale(.3) }
+  100% { opacity: 0; transform: translate(var(--dx), var(--dy)) scale(.3) }
+}
+.mascot .zap-bolt, .mascot .zap-skel { opacity: 0; animation: zap-strike 8.4s step-end infinite; }
+@keyframes zap-strike { 0% { opacity: 0 } 42.86% { opacity: 1 } 45.36% { opacity: 0 } 47.86% { opacity: 1 } 50.36% { opacity: 0 } 52.86% { opacity: 1 } 55.36% { opacity: 0 } }
+.mascot .zap-flash { opacity: 0; transform-box: fill-box; transform-origin: center; animation: zap-flash 8.4s ease-out infinite; }
+@keyframes zap-flash {
+  0% { opacity: 0; transform: scale(.3) }
+  42.79% { opacity: 0; transform: scale(.3) } 42.86% { opacity: .85; transform: scale(.3) } 43.93% { opacity: 0; transform: scale(1.4) }
+  47.79% { opacity: 0; transform: scale(.3) } 47.86% { opacity: .85; transform: scale(.3) } 48.93% { opacity: 0; transform: scale(1.4) }
+  52.79% { opacity: 0; transform: scale(.3) } 52.86% { opacity: .85; transform: scale(.3) } 53.93% { opacity: 0; transform: scale(1.4) }
+  100% { opacity: 0; transform: scale(1.4) }
+}
+.mascot .zap-shake { animation: zap-shake 8.4s linear infinite; }
+@keyframes zap-shake {
+  0%, 42.86%, 55.36%, 100% { transform: translate(0, 0) }
+  43.57%, 45%, 46.43%, 47.86%, 49.29%, 50.71%, 52.14%, 53.57%, 55% { transform: translate(-1.3px, .5px) }
+  44.29%, 45.71%, 47.14%, 48.57%, 50%, 51.43%, 52.86%, 54.29% { transform: translate(1.3px, -.5px) }
+}
+.mascot .zap-soot { opacity: 0; animation: zap-soot 8.4s linear infinite; }
+@keyframes zap-soot { 0%, 55.29% { opacity: 0 } 55.36%, 74.29% { opacity: 1 } 81.43%, 100% { opacity: 0 } }
+.mascot .zap-smoke { opacity: 0; transform-box: fill-box; transform-origin: center; animation: zap-smoke 8.4s ease-out infinite; }
+@keyframes zap-smoke {
+  0%, 55.71% { opacity: 0; transform: translate(0, 0) scale(.6) }
+  57.14% { opacity: .7; transform: translate(0, -2px) scale(.8) }
+  68.57%, 100% { opacity: 0; transform: translate(4px, -16px) scale(1.5) }
+}
+.mascot .zap-wiggle { transform-box: fill-box; transform-origin: 50% 100%; animation: zap-wiggle 8.4s ease-in-out infinite; }
+@keyframes zap-wiggle {
+  0%, 71.43%, 82.86%, 100% { transform: rotate(0) }
+  72.86% { transform: rotate(-8deg) } 74.64% { transform: rotate(8deg) } 76.43% { transform: rotate(-7deg) }
+  78.21% { transform: rotate(6deg) } 80% { transform: rotate(-4deg) } 81.43% { transform: rotate(2deg) }
+}
+.mascot .zap-dust { opacity: 0; animation: zap-dust 8.4s ease-out infinite; }
+@keyframes zap-dust {
+  0%, 72.14% { opacity: 0; transform: translate(0, 0) }
+  72.86% { opacity: .9; transform: translate(0, 0) }
+  82.14%, 100% { opacity: 0; transform: translate(var(--dx), var(--dy)) }
+}
+/* Work gag: hat blown off (mascotSVG "gust"; 8 s = GUST in the script). It
+   waves the wand with a breeze blowing by its tip (to 2.4 s), a gust sweeps
+   across (2.4-3 s) and pushes it over a little while the hat flies off; it
+   stares at the hat, runs over, puts it back on and runs back (to 7.2 s).
+   The run and the hat (gust-run, gust-hat) are made in the script from
+   GUST_MOVES; the keyframes here go by the same times, so change them together. */
+.mascot .gust-run, .mascot .gust-hat { animation: 8s linear infinite; }
+.mascot .gust-run { animation-name: gust-run; }
+.mascot .gust-hat { animation-name: gust-hat; transform-box: view-box; transform-origin: 30px 16px; }
+.mascot .gust-wand { transform-box: view-box; transform-origin: 55px 48px; animation: gust-wand 8s ease-in-out infinite; }
+@keyframes gust-wand {
+  0% { transform: rotate(0) } 3.5%, 10.5%, 17.5%, 24.5% { transform: rotate(-18deg) }
+  7%, 14%, 21%, 28% { transform: rotate(6deg) } 30%, 100% { transform: rotate(0) }
+}
+/* The breeze by the wand's tip: each line slides 12 units to the right,
+   fading in and out, four times over (to 2.4 s). */
+.mascot .gust-breeze { opacity: 0; animation: gust-breeze 8s linear infinite; }
+@keyframes gust-breeze {
+  0% { opacity: 0; transform: translateX(-6px) }
+  2%, 8%, 14%, 20% { opacity: .85 }
+  6%, 12%, 18%, 24% { opacity: 0; transform: translateX(6px) }
+  6.01%, 12.01%, 18.01% { transform: translateX(-6px) }
+  100% { opacity: 0; transform: translateX(6px) }
+}
+.mascot .gust-streak { opacity: 0; animation: gust-streak 8s ease-in infinite; }
+@keyframes gust-streak {
+  0%, 29% { opacity: 0; transform: translateX(-50px) }
+  30.5% { opacity: .9 }
+  37%, 100% { opacity: 0; transform: translateX(90px) }
+}
+.mascot .gust-lean { transform-box: fill-box; transform-origin: 50% 100%; animation: gust-lean 8s ease-in-out infinite; }
+@keyframes gust-lean { 0%, 30%, 38%, 100% { transform: rotate(0) } 33% { transform: rotate(7deg) } }
+/* The eyes follow the wand, then the hat flying off to the right, and look
+   back the way it came while it runs home. */
+.mascot .gust-eyes { animation: gust-eyes 8s ease-in-out infinite; }
+@keyframes gust-eyes {
+  0%, 30%, 92%, 100% { transform: translate(0, 0) }
+  4%, 27% { transform: translate(1px, -1.2px) }
+  36%, 72% { transform: translate(1.8px, -.3px) }
+  75%, 88% { transform: translate(-1.8px, 0) }
+}
+/* Work gag: reading the spellbook (mascotSVG "read"; 6 s = READ in the
+   script). The wand goes away and the book slides in (to 0.5 s), opens,
+   is read line by line from 0.95 s, the page turns at 2.5 s, more
+   reading from 3.1 s, then it closes (4.7 s) and is put away
+   (5.1 s). The keyframes are worked out from those times, so change them
+   all together. */
+.mascot .read-wand { animation: read-wand 6s ease-in-out infinite; }
+@keyframes read-wand { 0%, 95%, 100% { opacity: 1 } 4.17%, 91.67% { opacity: 0 } }
+.mascot .read-book { transform-box: view-box; animation: read-book 6s ease-in-out infinite; }
+@keyframes read-book {
+  0% { opacity: 0; transform: translate(16px, 4px) scale(.4) }
+  8.33%, 85% { opacity: 1; transform: translate(0, 0) scale(1) }
+  93.33%, 100% { opacity: 0; transform: translate(16px, 4px) scale(.4) }
+}
+.mascot .read-closed, .mascot .read-open { transform-box: view-box; animation: 6s ease-in-out infinite; }
+.mascot .read-closed { animation-name: read-closed; }
+.mascot .read-open { animation-name: read-open; }
+@keyframes read-closed {
+  0%, 8.33%, 84.17%, 100% { opacity: 1; transform: scaleX(1) }
+  11.17%, 81.17% { opacity: 1; transform: scaleX(.15) }
+  11.33%, 81% { opacity: 0; transform: scaleX(.15) }
+}
+@keyframes read-open {
+  0%, 11.17%, 81.17%, 100% { opacity: 0; transform: scaleX(.15) }
+  11.33%, 81% { opacity: 1; transform: scaleX(.15) }
+  14.17%, 78.33% { opacity: 1; transform: scaleX(1) }
+}
+.mascot .read-flip-up, .mascot .read-flip-down { transform-box: view-box; opacity: 0; animation: 6s ease-in-out infinite; }
+.mascot .read-flip-up { animation-name: read-flip-up; }
+.mascot .read-flip-down { animation-name: read-flip-down; }
+@keyframes read-flip-up {
+  0%, 41.5% { opacity: 0; transform: none }
+  41.67% { opacity: 1; transform: none }
+  45.83% { opacity: 1; transform: translateY(-3px) scaleX(.06) skewY(-14deg) }
+  46%, 100% { opacity: 0; transform: translateY(-3px) scaleX(.06) skewY(-14deg) }
+}
+@keyframes read-flip-down {
+  0%, 45.83% { opacity: 0; transform: translateY(-3px) scaleX(.06) skewY(14deg) }
+  46% { opacity: 1; transform: translateY(-3px) scaleX(.06) skewY(14deg) }
+  50% { opacity: 1; transform: none }
+  54.17%, 100% { opacity: 0; transform: none } /* fades into the page beneath */
+}
+.mascot .read-eyes { animation: read-eyes 6s linear infinite; }
+@keyframes read-eyes {
+  0%, 8.33%, 85%, 100% { transform: translate(0, 0) }
+  13.83% { transform: translate(-1.6px, 1px) }
+  15.83% { transform: translate(-1.6px, 1.0px) } 26.17% { transform: translate(1.6px, 1.0px) }
+  28.33% { transform: translate(-1.6px, 1.4px) } 38.67% { transform: translate(1.6px, 1.4px) }
+  41.67% { transform: translate(1.4px, 1px) }
+  50% { transform: translate(-1.4px, 1px) }
+  51.67% { transform: translate(-1.6px, 1.0px) } 62% { transform: translate(1.6px, 1.0px) }
+  64.17% { transform: translate(-1.6px, 1.4px) } 74.5% { transform: translate(1.6px, 1.4px) }
+  78.33% { transform: translate(0, 1px) }
+}
+/* Work gag: hat on fire (mascotSVG "fire"; 10 s = FIRE in the script). It
+   waves the wand with fiery sparks (to 2.4 s), aims at the
+   top right and shoots a fireball (2.8 s) that flies off the screen; a spark
+   from it drops onto the middle of the hat (3.9 s). The hat burns and smokes
+   for a good while as it stares ahead and blinks, none the wiser; then it
+   notices (7.4 s), jumps (7.55-8 s), points the wand at the hat and puts the
+   fire out with water (8-8.8 s), with a puff of steam. The keyframes are
+   worked out from those times, so change them all together. */
+.mascot .fire-wand { transform-box: view-box; transform-origin: 55px 48px; animation: fire-wand 10s ease-in-out infinite; }
+@keyframes fire-wand {
+  0% { transform: rotate(0) } 2.8%, 8.4%, 14%, 19.6% { transform: rotate(-18deg) }
+  5.6%, 11.2%, 16.8%, 22.4% { transform: rotate(6deg) } 24% { transform: rotate(0) }
+  26.5% { transform: rotate(10deg) } 28%, 34% { transform: rotate(-12deg) } 38%, 80% { transform: rotate(0) }
+  81%, 88% { transform: rotate(-60deg) } 83%, 86% { transform: rotate(-56deg) } 84.5% { transform: rotate(-63deg) }
+  92%, 100% { transform: rotate(0) }
+}
+/* Sparks burst off the wand's tip at each swing up and drift away. */
+.mascot .fire-spark { opacity: 0; transform-box: fill-box; transform-origin: center; animation: fire-spark 10s ease-out infinite; }
+@keyframes fire-spark {
+  0%, 2.79% { opacity: 0; transform: translate(0, 0) scale(1) }
+  2.8%, 8.4%, 14%, 19.6% { opacity: 1; transform: translate(0, 0) scale(1) }
+  7.3%, 12.9%, 18.5%, 24.1% { opacity: 0; transform: translate(var(--dx), var(--dy)) scale(.3) }
+  7.31%, 12.91%, 18.51% { transform: translate(0, 0) scale(1) }
+  100% { opacity: 0; transform: translate(var(--dx), var(--dy)) scale(.3) }
+}
+/* The fireball (and its trail) flies from the wand's tip up to the top right
+   and on past the edge of the screen. */
+.mascot .fire-ball, .mascot .fire-trail { opacity: 0; transform-box: fill-box; transform-origin: center; animation: fire-ball 10s linear infinite; }
+.mascot .fire-trail { filter: opacity(.7); }
+@keyframes fire-ball {
+  0%, 27.9% { opacity: 0; transform: translate(0, 0) scale(.4) }
+  28% { opacity: 1; transform: translate(0, 0) scale(.4) }
+  30% { opacity: 1; transform: translate(14px, -15px) scale(1) }
+  38% { opacity: 1; transform: translate(70px, -75px) scale(1.3) }
+  38.1%, 100% { opacity: 0; transform: translate(70px, -75px) scale(1.3) }
+}
+/* A spark breaks off the fireball and arcs back down onto the hat. */
+.mascot .fire-drop { opacity: 0; animation: fire-drop 10s linear infinite; }
+@keyframes fire-drop {
+  0%, 29.9% { opacity: 0; transform: translate(48px, 1px) }
+  30% { opacity: 1; transform: translate(48px, 1px) }
+  32% { transform: translate(40px, -10px) }
+  34% { transform: translate(28px, -14px) }
+  36% { transform: translate(15px, -10px) }
+  38% { transform: translate(5px, -4px) }
+  39% { opacity: 1; transform: translate(0, 0) }
+  39.5%, 100% { opacity: 0; transform: translate(0, 0) }
+}
+/* The flame on the hat grows slowly from its base and flickers like the
+   campfire's. */
+.mascot .fire-hat { opacity: 0; transform-box: fill-box; transform-origin: 50% 100%; animation: fire-hat 10s ease-in-out infinite; }
+@keyframes fire-hat {
+  0%, 38.9% { opacity: 0; transform: scale(.1) }
+  39% { opacity: 1; transform: scale(.15) }
+  48% { opacity: 1; transform: scale(.5) }
+  70% { opacity: 1; transform: scale(1) }
+  82% { opacity: 1; transform: scale(1.1) }
+  87%, 100% { opacity: 0; transform: scale(.05) }
+}
+.mascot .fire-flick-a, .mascot .fire-flick-c { transform-box: fill-box; transform-origin: 50% 100%; animation: .9s ease-in-out infinite; }
+.mascot .fire-flick-a { animation-name: flicker-a; }
+.mascot .fire-flick-c { animation-name: flicker-c; }
+.mascot .fire-char { opacity: 0; animation: fire-char 10s linear infinite; }
+@keyframes fire-char { 0%, 40% { opacity: 0 } 80%, 94% { opacity: .6 } 100% { opacity: 0 } }
+/* Smoke puffs rise from the flame one after another (staggered in the script). */
+.mascot .fire-smoke { opacity: 0; transform-box: fill-box; transform-origin: center; animation: fire-smoke 10s ease-out infinite; }
+@keyframes fire-smoke {
+  0%, 44% { opacity: 0; transform: translate(0, 0) scale(.5) }
+  45.5% { opacity: .6; transform: translate(0, -2px) scale(.7) }
+  56%, 100% { opacity: 0; transform: translate(3px, -14px) scale(1.5) }
+}
+.mascot .fire-steam { opacity: 0; transform-box: fill-box; transform-origin: center; animation: fire-steam 10s ease-out infinite; }
+@keyframes fire-steam {
+  0%, 85.5% { opacity: 0; transform: translate(0, 0) scale(.4) }
+  87% { opacity: .8; transform: translate(0, -2px) scale(.8) }
+  96%, 100% { opacity: 0; transform: translate(var(--dx), -14px) scale(1.8) }
+}
+.mascot .fire-water { opacity: 0; animation: fire-water 10s linear infinite; }
+@keyframes fire-water {
+  0%, 80.9% { opacity: 0; transform: translate(0, 0) }
+  81% { opacity: .95; transform: translate(0, 0) }
+  82.2% { transform: translate(-8px, -11px) }
+  83.2% { opacity: .9; transform: translate(-16px, -15px) }
+  83.6%, 100% { opacity: 0; transform: translate(-16px, -15px) }
+}
+/* The eyes follow the wand and the fireball, then stare ahead, blink and
+   glance about while the hat burns; they look up, go wide with fright, and
+   blink with relief at the end. */
+.mascot .fire-eyes { transform-box: fill-box; transform-origin: center; animation: fire-eyes 10s ease-in-out infinite; }
+@keyframes fire-eyes {
+  0%, 40%, 54.5%, 57.5%, 70%, 73%, 100% { transform: translate(0, 0) scale(1) }
+  3%, 24% { transform: translate(1px, -1.2px) scale(1) }
+  29%, 35% { transform: translate(1.8px, -2.2px) scale(1) }
+  55.5% { transform: translate(0, 0) scale(1, .1) }
+  56.5% { transform: translate(0, 0) scale(1) }
+  62%, 64% { transform: translate(-1.4px, 0) scale(1) }
+  66.5%, 68% { transform: translate(1.4px, 0) scale(1) }
+  74.5% { transform: translate(0, -2.2px) scale(1) }
+  75.5%, 88% { transform: translate(-.6px, -2px) scale(1.3, 1.35) }
+  91%, 93% { transform: translate(0, 0) scale(1) }
+  93.8% { transform: translate(0, 0) scale(1, .1) }
+  94.6% { transform: translate(0, 0) scale(1) }
+}
+.mascot .fire-gasp { transform-box: fill-box; transform-origin: center; animation: fire-gasp 10s ease-in-out infinite; }
+@keyframes fire-gasp { 0%, 75%, 89%, 100% { transform: scale(1, 0) } 76.5%, 87.5% { transform: scale(1, 1) } }
+.mascot .fire-jump { animation: fire-jump 10s ease-in-out infinite; }
+@keyframes fire-jump {
+  0%, 75.5%, 80%, 87%, 100% { transform: translate(0, 0) }
+  76.5% { transform: translate(0, 1px) }
+  78% { transform: translate(0, -7px) }
+  81%, 83%, 85% { transform: translate(-.7px, 0) }
+  82%, 84%, 86% { transform: translate(.7px, 0) }
+}
+/* Work gag: rained on (mascotSVG "rain"; 12 s = RAIN in the script). It waves the wand with droplets flying (to 2.4 s), aims at
+   the top right and a stream of water shoots off (2.8-4.6 s). Nothing
+   happens for a while (a blink at 5.5 s); then rain falls (6.6-9 s), it's
+   soaked and cross (from 7.2 s), dries off with a little steam (9.6-11 s)
+   and blinks. The keyframes are worked out from those times, so change them
+   all together. */
+.mascot .rain-wand { transform-box: view-box; transform-origin: 55px 48px; animation: rain-wand 12s ease-in-out infinite; }
+@keyframes rain-wand {
+  0% { transform: rotate(0) } 2.33%, 7%, 11.67%, 16.33% { transform: rotate(-18deg) }
+  4.67%, 9.33%, 14%, 18.67% { transform: rotate(6deg) } 20% { transform: rotate(0) }
+  22.08% { transform: rotate(10deg) } 23.33%, 35% { transform: rotate(-12deg) }
+  26.67%, 33.33% { transform: rotate(-15deg) } 30% { transform: rotate(-10deg) }
+  37.5%, 100% { transform: rotate(0) }
+}
+/* Droplets burst off the wand's tip at each swing up and drift away. */
+.mascot .rain-spark { opacity: 0; transform-box: fill-box; transform-origin: center; animation: rain-spark 12s ease-out infinite; }
+@keyframes rain-spark {
+  0%, 2.32% { opacity: 0; transform: translate(0, 0) scale(1) }
+  2.33%, 7%, 11.67%, 16.33% { opacity: 1; transform: translate(0, 0) scale(1) }
+  6.08%, 10.75%, 15.42%, 20.08% { opacity: 0; transform: translate(var(--dx), var(--dy)) scale(.3) }
+  6.09%, 10.76%, 15.43% { transform: translate(0, 0) scale(1) }
+  100% { opacity: 0; transform: translate(var(--dx), var(--dy)) scale(.3) }
+}
+/* The stream (pathLength 100) grows out of the wand to past the edge of the
+   screen (2.8-3.6 s) with the splash at its head (rain-head, made in the
+   script), pours, then lets go of the wand and flies off (4-4.6 s). */
+.mascot .rain-stream { opacity: 0; stroke-dasharray: 100 100; animation: rain-stream 12s linear infinite; }
+@keyframes rain-stream {
+  0%, 23.32% { opacity: 0; stroke-dashoffset: 100 }
+  23.33% { opacity: 1; stroke-dashoffset: 100 }
+  30%, 33.33% { opacity: 1; stroke-dashoffset: 0 }
+  38.33% { opacity: 1; stroke-dashoffset: -100 }
+  38.34%, 100% { opacity: 0; stroke-dashoffset: -100 }
+}
+.mascot .rain-head { opacity: 0; transform-box: view-box; transform-origin: 0 0; animation: rain-head 12s linear infinite; }
+.mascot .rain-head-pulse { transform-box: view-box; transform-origin: 0 0; animation: rain-head-pulse .2s ease-in-out infinite alternate; }
+@keyframes rain-head-pulse { from { transform: scale(.9, 1.1) } to { transform: scale(1.1, .9) } }
+/* Darker patches and bright glints run along the stream, at different
+   speeds, while it pours fully (3.6-4 s). */
+.mascot .rain-flow { opacity: 0; animation: rain-flow-show 12s linear infinite, linear infinite; }
+.mascot .rain-patch { stroke-dasharray: 7 5 3 11; animation-name: rain-flow-show, rain-patch; animation-duration: 12s, .6s; }
+.mascot .rain-glint { stroke-dasharray: 2 4 6 5 1 9 3 2; animation-name: rain-flow-show, rain-glint; animation-duration: 12s, .45s; }
+@keyframes rain-flow-show { 0%, 28.5% { opacity: 0 } 30%, 33% { opacity: 1 } 34.5%, 100% { opacity: 0 } }
+@keyframes rain-patch { from { stroke-dashoffset: 0 } to { stroke-dashoffset: -26 } }
+@keyframes rain-glint { from { stroke-dashoffset: 0 } to { stroke-dashoffset: -32 } }
+/* Droplets splash off the stream while it pours (from 3.4 s, as it gets
+   there, to 4.2 s, as it lets go): each flies off and fades every 0.6 s. */
+.mascot .rain-spray { opacity: 0; animation: rain-spray 12s linear infinite; }
+@keyframes rain-spray { 0%, 28.3% { opacity: 0 } 30%, 33.5% { opacity: 1 } 35%, 100% { opacity: 0 } }
+.mascot .rain-splash { transform-box: fill-box; transform-origin: center; animation: rain-splash .6s ease-out infinite; }
+@keyframes rain-splash {
+  0% { opacity: .95; transform: translate(0, 0) scale(1) }
+  100% { opacity: 0; transform: translate(var(--dx), var(--dy)) scale(.4) }
+}
+/* Each raindrop falls from above the screen to the ground six times over
+   (6.6-9 s). */
+.mascot .rain-drop { opacity: 0; animation: rain-drop 12s linear infinite; }
+@keyframes rain-drop {
+  0%, 54.99% { opacity: 0; transform: translateY(0) }
+  55%, 58.33%, 61.67%, 65%, 68.33%, 71.67% { opacity: .9; transform: translateY(0) }
+  58.17%, 61.5%, 64.83%, 68.17%, 71.5%, 74.83% { opacity: .9; transform: translateY(62px) }
+  58.25%, 61.58%, 64.92%, 68.25%, 71.58%, 74.92%, 100% { opacity: 0; transform: translateY(62px) }
+}
+.mascot .rain-wet { opacity: 0; animation: rain-wet 12s ease-in-out infinite; }
+@keyframes rain-wet { 0%, 56% { opacity: 0 } 60%, 80% { opacity: .4 } 89%, 100% { opacity: 0 } }
+/* Drips run off the soaked body, one every 0.8 s each (staggered in the script). */
+.mascot .rain-drip { opacity: 0; animation: rain-drip 12s ease-in infinite; }
+@keyframes rain-drip {
+  0%, 59.9% { opacity: 0; transform: translateY(0) }
+  60%, 66.67%, 73.33% { opacity: .9; transform: translateY(0) }
+  62.5%, 69.17%, 75.83% { opacity: 0; transform: translateY(6px) }
+  62.6%, 69.27% { transform: translateY(0) }
+  100% { opacity: 0; transform: translateY(6px) }
+}
+.mascot .rain-steam { opacity: 0; transform-box: fill-box; transform-origin: center; animation: rain-steam 12s ease-out infinite; }
+@keyframes rain-steam {
+  0%, 82% { opacity: 0; transform: translate(0, 0) scale(.5) }
+  84% { opacity: .6; transform: translate(0, -2px) scale(.8) }
+  92%, 100% { opacity: 0; transform: translate(var(--dx), -12px) scale(1.5) }
+}
+/* Cross while it's wet: brows and a frown, eyes narrowed in a glare. */
+.mascot .rain-cross { opacity: 0; animation: rain-cross 12s ease-in-out infinite; }
+@keyframes rain-cross { 0%, 59% { opacity: 0 } 61%, 86% { opacity: 1 } 89%, 100% { opacity: 0 } }
+.mascot .rain-eyes { transform-box: fill-box; transform-origin: center; animation: rain-eyes 12s ease-in-out infinite; }
+@keyframes rain-eyes {
+  0%, 38%, 45%, 46.67%, 55%, 89%, 93.3%, 94.7%, 100% { transform: translate(0, 0) scale(1) }
+  2.5%, 20% { transform: translate(1px, -1.2px) scale(1) }
+  24%, 34% { transform: translate(1.8px, -2.2px) scale(1) }
+  45.83% { transform: translate(0, 0) scale(1, .1) }
+  56.5%, 58% { transform: translate(0, -2.4px) scale(1) }
+  61%, 86% { transform: translate(0, .4px) scale(1, .7) }
+  94% { transform: translate(0, 0) scale(1, .1) }
+}
+/* The soggy hat droops to one side from its brim. */
+.mascot .rain-hat { transform-box: view-box; animation: rain-hat 12s ease-in-out infinite; }
+@keyframes rain-hat {
+  0%, 57%, 89%, 100% { transform: translateY(0) rotate(0) }
+  61%, 83% { transform: translateY(1.2px) rotate(-5deg) }
+}

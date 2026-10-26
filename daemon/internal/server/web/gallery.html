@@ -16,6 +16,9 @@
   .cell { background: #1f1f1d; border-radius: 10px; height: 150px; display: flex; align-items: center; justify-content: center; }
   /* Twice the mascot's 78x60 canvas. */
   .cell svg.mascot { width: 156px; height: 120px; }
+  /* The gust's run for the hat goes well to the right of the mascot. */
+  .colors.wide { grid-template-columns: repeat(2, 360px); }
+  .wide .cell { justify-content: flex-start; padding-left: 30px; }
 </style>
 <link rel="stylesheet" href="mascot.css">
 </head>
@@ -25,6 +28,18 @@
 
 <h2>Shapes and states</h2>
 <div class="table" id="states"></div>
+
+<h2>Gags while working</h2>
+<p>Zapped by its own spell: wand up, lightning, skeleton, soot, shake it off.</p>
+<div class="colors" id="gags" style="margin-top: 12px"></div>
+<p style="margin-top: 16px">Reading the spellbook: takes it out, reads, turns the page, reads on, puts it away.</p>
+<div class="colors" id="gags-read" style="margin-top: 12px"></div>
+<p style="margin-top: 16px">Hat blown off: wand, breeze, a gust takes the hat, runs for it, puts it on, runs back.</p>
+<div class="colors wide" id="gags-gust" style="margin-top: 12px"></div>
+<p style="margin-top: 16px">Hat on fire: fiery sparks, a fireball off the screen, a spark sets the hat alight, it burns unnoticed, a fright, water puts it out.</p>
+<div class="colors" id="gags-fire" style="margin-top: 12px"></div>
+<p style="margin-top: 16px">Rained on: droplets, a stream of water off the screen, a quiet moment, rain, soaked and cross, dries off.</p>
+<div class="colors" id="gags-rain" style="margin-top: 12px"></div>
 
 <h2>All colors while working</h2>
 <div class="colors" id="colors"></div>
@@ -52,6 +67,11 @@ NAMES.forEach((name, shape) => {
 });
 document.getElementById("states").innerHTML = html;
 document.getElementById("colors").innerHTML = COLORS.map((_, i) => cell(i, "working")).join("");
+document.getElementById("gags").innerHTML = NAMES.map((_, shape) => cell(shape, "zap")).join("");
+document.getElementById("gags-read").innerHTML = NAMES.map((_, shape) => cell(shape, "read")).join("");
+document.getElementById("gags-gust").innerHTML = NAMES.map((_, shape) => cell(shape, "gust")).join("");
+document.getElementById("gags-fire").innerHTML = NAMES.map((_, shape) => cell(shape, "fire")).join("");
+document.getElementById("gags-rain").innerHTML = NAMES.map((_, shape) => cell(shape, "rain")).join("");
 
 // Loops of changes between states. Like the screen, each redraw passes how
 // long ago the last change started, so animations carry on smoothly from it.
